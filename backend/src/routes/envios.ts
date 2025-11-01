@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { pool } from '../database/db.js';
+import { pool } from '../database/db';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';

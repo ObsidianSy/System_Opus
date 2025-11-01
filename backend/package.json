@@ -3,10 +3,9 @@
     "version": "1.0.0",
     "description": "Backend API para substituir n8n - PostgreSQL + Express + TypeScript",
     "main": "dist/server.js",
-    "type": "module",
     "scripts": {
-        "dev": "tsx watch src/server.ts",
-        "build": "tsc",
+        "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+        "build": "rimraf dist && tsc",
         "start": "node dist/server.js",
         "db:migrate": "node dist/database/migrate.js"
     },
@@ -37,7 +36,9 @@
         "@types/multer": "^2.0.0",
         "@types/node": "^20.10.5",
         "@types/pg": "^8.10.9",
-        "tsx": "^4.20.6",
+        "rimraf": "^5.0.10",
+        "ts-node": "^10.9.2",
+        "ts-node-dev": "^2.0.0",
         "typescript": "^5.3.3"
     }
 }

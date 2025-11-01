@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { pool } from '../database/db.js';
-import { buildIdempotencyKey } from '../utils/normalizers.js';
+import { pool } from '../database/db';
+import { buildIdempotencyKey } from '../utils/normalizers';
 
 export const pagamentosRouter = Router();
 
