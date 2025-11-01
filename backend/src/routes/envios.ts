@@ -760,34 +760,41 @@ enviosRouter.get('/search-sku', async (req: Request, res: Response) => {
 
         // 3. Busca por prefixo no SKU
         const prefixQuery = `
-            SELECT 
-                sku,
-                nome,
-                preco_unitario,
-                quantidade_atual,
-                false as is_kit,
-                'prefix' as source,
-                0.8 as score
-            FROM obsidian.produtos
-            WHERE UPPER(sku) LIKE UPPER($1) || '%'
-            LIMIT 10
-        `;
+    SELECT 
+        sku,
+        nome,
+        preco_unitario,
+        quantidade_atual,
+        false as is_kit,
+        'prefix' as source,
+        0.8 as score
+    FROM obsidian.produtos
+    WHERE UPPER(sku) LIKE UPPER($1) || '%'
+    ORDER BY sku  -- ✅ ADICIONA ORDEM ALFABÉTICA
+    LIMIT 10
+`;
 
         // 4. Busca fuzzy (contém o termo)
         const fuzzyQuery = `
-            SELECT 
-                sku,
-                nome,
-                preco_unitario,
-                quantidade_atual,
-                false as is_kit,
-                'fuzzy' as source,
-                0.6 as score
-            FROM obsidian.produtos
-            WHERE UPPER(sku) LIKE '%' || UPPER($1) || '%'
-               OR UPPER(nome) LIKE '%' || UPPER($1) || '%'
-            LIMIT 10
-        `;
+    SELECT 
+        sku,
+        nome,
+        preco_unitario,
+        quantidade_atual,
+        false as is_kit,
+        'fuzzy' as source,
+        0.6 as score
+    FROM obsidian.produtos
+    WHERE UPPER(sku) LIKE '%' || UPPER($1) || '%'
+       OR UPPER(nome) LIKE '%' || UPPER($1) || '%'
+    ORDER BY 
+        CASE 
+            WHEN UPPER(sku) LIKE UPPER($1) || '%' THEN 0  -- Prefixo primeiro
+            ELSE 1
+        END,
+        sku  -- Depois ordem alfabética
+    LIMIT 10
+`;
 
         // Executar buscas em paralelo
         const [exactResult, aliasResult, prefixResult, fuzzyResult] = await Promise.all([
