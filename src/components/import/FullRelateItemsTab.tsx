@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { useImportClient } from '@/contexts/ImportClientContext';
 import { useFullImportData } from '@/hooks/useFullImportData';
+import { useApiData } from '@/hooks/useApiData';
 import type { FullEnvioPending, SkuSearchResult } from '@/hooks/useFullImportData';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -60,6 +61,9 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
     searchSku,
   } = useFullImportData();
 
+  // Carregar TODOS os produtos (igual o ML faz)
+  const { data: todosProdutos } = useApiData('Estoque');
+
   // ✅ Garantir arrays seguros no componente (defesa em profundidade)
   const envios = Array.isArray(enviosRaw) ? enviosRaw : [];
   const pendings = Array.isArray(pendingsRaw) ? pendingsRaw : [];  // Get client ID from selectedClientId
@@ -109,31 +113,65 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
     }
   }, [initialEnvioNum, initialClienteNome, currentEnvio, loadEnvioDetails]);
 
-  // Carrega SKUs iniciais ao abrir popover (busca genérica)
-  const loadInitialSkus = async (itemId: number) => {
-    if (!currentEnvio?.clientId) return;
 
-    try {
-      // Busca com "*" para trazer todos os SKUs
-      const results = await searchSku('*', currentEnvio.clientId);
-      // Deduplica por sku+source para evitar itens repetidos
-      const deduped = (() => {
-        const seen = new Set<string>();
-        const out: SkuSearchResult[] = [];
-        for (const r of results) {
-          const key = `${r.sku}|${r.source}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            out.push(r);
-          }
-        }
-        return out;
-      })();
-      setSearchResults(prev => ({ ...prev, [itemId]: deduped }));
-    } catch (error) {
-      console.error('Erro ao carregar SKUs iniciais:', error);
+  // Busca SKU localmente (igual o ML faz)
+  const buscarSkuLocal = useCallback((termo: string): SkuSearchResult[] => {
+    if (!todosProdutos || todosProdutos.length === 0) return [];
+
+    const termoUpper = termo.toUpperCase().trim();
+
+    if (termoUpper === '' || termoUpper === '*') {
+      return todosProdutos.slice(0, 100).map((p: any) => ({
+        sku: p.sku,
+        nome: p.nome,
+        preco_unitario: p.preco_unitario,
+        quantidade_atual: p.quantidade_atual,
+        is_kit: p.is_kit || p.tipo_produto === 'KIT',
+        source: 'fuzzy' as const,
+        score: 1.0
+      }));
     }
-  };
+
+    const resultados: SkuSearchResult[] = [];
+
+    todosProdutos.forEach((p: any) => {
+      const skuUpper = (p.sku || '').toUpperCase();
+      const nomeUpper = (p.nome || '').toUpperCase();
+
+      let score = 0;
+      let source: 'exact' | 'prefix' | 'fuzzy' | 'alias' = 'fuzzy';
+
+      if (skuUpper === termoUpper) {
+        score = 1.0;
+        source = 'exact';
+      } else if (skuUpper.startsWith(termoUpper)) {
+        score = 0.8;
+        source = 'prefix';
+      } else if (skuUpper.includes(termoUpper)) {
+        score = 0.6;
+        source = 'fuzzy';
+      } else if (nomeUpper.includes(termoUpper)) {
+        score = 0.4;
+        source = 'fuzzy';
+      }
+
+      if (score > 0) {
+        resultados.push({
+          sku: p.sku,
+          nome: p.nome,
+          preco_unitario: p.preco_unitario,
+          quantidade_atual: p.quantidade_atual,
+          is_kit: p.is_kit || p.tipo_produto === 'KIT',
+          source: source,
+          score: score
+        });
+      }
+    });
+
+    return resultados
+      .sort((a, b) => b.score !== a.score ? b.score - a.score : a.sku.localeCompare(b.sku))
+      .slice(0, 100);
+  }, [todosProdutos]);
 
   const handleSearch = async () => {
     if (!selectedClientId) {
@@ -569,9 +607,10 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
                               <Popover>
                                 <PopoverTrigger asChild>
                                   <Button variant="outline" className="w-full justify-start" onClick={() => {
-                                    // Carrega todos os SKUs ao abrir
+                                    // Carrega lista inicial ao abrir
                                     if (!searchResults[itemKey] || searchResults[itemKey].length === 0) {
-                                      loadInitialSkus(itemKey);
+                                      const resultados = buscarSkuLocal('*');
+                                      setSearchResults(prev => ({ ...prev, [itemKey]: resultados }));
                                     }
                                   }}>
                                     <Search className="h-4 w-4 mr-2" />
@@ -580,7 +619,14 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
                                 </PopoverTrigger>
                                 <PopoverContent className="w-[400px] p-0 z-[90] bg-background" align="start">
                                   <Command>
-                                    <CommandInput placeholder="Pesquisar SKU..." />
+                                    <CommandInput 
+                                      placeholder="Pesquisar SKU..." 
+                                      onValueChange={(value) => {
+                                        // Busca local ao digitar
+                                        const resultados = buscarSkuLocal(value);
+                                        setSearchResults(prev => ({ ...prev, [itemKey]: resultados }));
+                                      }}
+                                    />
                                     <CommandList className="max-h-[300px]">
                                       {results.length === 0 ? (
                                         <CommandEmpty>Carregando SKUs...</CommandEmpty>
