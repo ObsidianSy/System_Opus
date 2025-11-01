@@ -860,15 +860,26 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
 
             const item = itemResult.rows[0];
 
+            console.log('📝 ML - Atualizando item:', {
+                raw_id,
+                sku,
+                status_anterior: item.status,
+                sku_anterior: item.matched_sku
+            });
+
             // Atualizar o item com o SKU relacionado
-            await pool.query(
+            const updateResult = await pool.query(
                 `UPDATE raw_export_orders 
                  SET matched_sku = $1, 
                      status = 'matched', 
                      processed_at = NOW() 
-                 WHERE id = $2`,
+                 WHERE id = $2
+                 RETURNING id, matched_sku, status`,
                 [sku, raw_id]
             );
+
+            console.log('✅ ML - Item atualizado:', updateResult.rows[0]);
+            console.log('📊 ML - Linhas afetadas:', updateResult.rowCount);
 
             // Se learn_alias=true, salvar como alias
             if (learn_alias && (alias_text || item.sku_text)) {
@@ -1161,6 +1172,7 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
     try {
         const { raw_id, matched_sku, create_alias = true, alias_text, source } = req.body;
 
+        console.log('📦 Match-line recebido:', { raw_id, matched_sku, create_alias, alias_text, source });
 
         // Validação de campos obrigatórios
         if (!raw_id) {
@@ -1188,38 +1200,59 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
         const clientId = rawData.client_id;
         const envioId = rawData.envio_id;
 
+        console.log('📝 Atualizando linha:', {
+            raw_id,
+            matched_sku,
+            status_anterior: rawData.status,
+            sku_anterior: rawData.matched_sku
+        });
+
         // Atualizar linha com o SKU relacionado
-        await pool.query(
+        const updateResult = await pool.query(
             `UPDATE logistica.full_envio_raw 
              SET matched_sku = $1, 
                  status = 'matched', 
                  processed_at = NOW() 
-             WHERE id = $2`,
+             WHERE id = $2
+             RETURNING id, matched_sku, status`,
             [matched_sku, raw_id]
         );
+
+        console.log('✅ Linha atualizada:', updateResult.rows[0]);
+        console.log('📊 Linhas afetadas:', updateResult.rowCount);
 
         let aliasOps = 0;
 
         // Se create_alias=true, salvar como alias
         if (create_alias && alias_text) {
+            console.log('🔍 Verificando alias existente:', { clientId, alias_text, matched_sku });
+
             // Usar a mesma normalização que a constraint ux_sku_aliases_flat
             const existingAlias = await pool.query(
-                `SELECT id FROM obsidian.sku_aliases 
+                `SELECT id, stock_sku, client_id FROM obsidian.sku_aliases 
                  WHERE client_id = $1 
                    AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
                        UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))`,
                 [clientId, alias_text]
             );
 
+            console.log('📋 Aliases encontrados:', existingAlias.rows);
+
             if (existingAlias.rows.length === 0) {
+                // Alias não existe, criar novo
                 await pool.query(
                     `INSERT INTO obsidian.sku_aliases 
                      (client_id, alias_text, stock_sku, confidence_default, times_used) 
                      VALUES ($1, $2, $3, 0.95, 1)`,
                     [clientId, alias_text, matched_sku]
                 );
+                console.log('✅ Alias criado:', alias_text, '->', matched_sku);
                 aliasOps = 1;
             } else {
+                // Alias já existe, apenas atualizar o uso
+                const existingSku = existingAlias.rows[0].stock_sku;
+                console.log('ℹ️ Alias já existe:', alias_text, '->', existingSku, '(atual:', matched_sku, ')');
+
                 await pool.query(
                     `UPDATE obsidian.sku_aliases 
                      SET stock_sku = $1, 
@@ -1804,4 +1837,3 @@ enviosRouter.get('/ml-summary', async (req: Request, res: Response) => {
         res.status(500).json({ error: 'Erro ao buscar resumo ML', details: error.message });
     }
 });
-
