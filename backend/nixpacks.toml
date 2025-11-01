@@ -1,5 +1,11 @@
-{
-  "providers": ["nodejs"],
-  "buildCommand": "npm ci && npm run build",
-  "startCommand": "node dist/server.js"
-}
+[phases.setup]
+nixPkgs = ["nodejs_18", "npm-9_x"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "node dist/server.js"
