@@ -10,10 +10,7 @@ Backend Node.js com Express, TypeScript e PostgreSQL para substituir a integraç
 - **pg** - Driver PostgreSQL
 - **CORS** - Comunicação cross-origin
 - **Helmet** - Segurança HTTP
-- **Compression** - Compressão de respostas
-
-## 📦 Estrutura do Projeto
-
+- **Compression** - Compressão de respos
 ```
 backend/
 ├── src/
