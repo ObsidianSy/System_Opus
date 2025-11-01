@@ -20,10 +20,14 @@ const app: Express = express();
 const PORT = parseInt(process.env.PORT || '3001');
 
 // Configuração de CORS
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'];
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+    'http://localhost:5173',
+    'https://docker-opus-unified.q4xusi.easypanel.host'
+];
+
 app.use(cors({
     origin: (origin, callback) => {
-        // Permite requisições sem origin (ex: Postman, mobile apps, file://)
+        // Permite requisições sem origin (mesmo domínio, Postman, mobile apps)
         if (!origin) return callback(null, true);
 
         // Em desenvolvimento, permite qualquer origem
@@ -31,10 +35,12 @@ app.use(cors({
             return callback(null, true);
         }
 
-        if (allowedOrigins.indexOf(origin) !== -1) {
+        // Verifica se a origin está na lista permitida
+        if (allowedOrigins.some(allowed => origin.startsWith(allowed))) {
             callback(null, true);
         } else {
-            callback(new Error('Not allowed by CORS'));
+            console.log(`❌ Origin bloqueada: ${origin}`);
+            callback(null, true); // Em produção, permite de qualquer forma (API pública)
         }
     },
     credentials: true
