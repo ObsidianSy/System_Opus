@@ -72,18 +72,33 @@ app.use('/api/envios', enviosRouter);
 
 // Serve arquivos estáticos do frontend (se existir pasta public)
 const publicPath = path.join(__dirname, '..', 'public');
+console.log('📁 Pasta public:', publicPath);
+
+// Verifica se a pasta existe
+import fs from 'fs';
+if (fs.existsSync(publicPath)) {
+    console.log('✅ Pasta public encontrada');
+    const files = fs.readdirSync(publicPath);
+    console.log('📄 Arquivos:', files.slice(0, 10).join(', '));
+} else {
+    console.log('❌ Pasta public NÃO encontrada');
+}
+
 app.use(express.static(publicPath));
 
 // SPA fallback - todas as rotas não-API vão para index.html
 app.get('*', (req: Request, res: Response, next: NextFunction) => {
+    console.log('🌐 Requisição:', req.method, req.path);
     // Se for rota de API que não existe, passa para o erro handler
     if (req.path.startsWith('/api/')) {
         return res.status(404).json({ error: 'Rota não encontrada' });
     }
     // Caso contrário, serve o index.html do frontend
-    res.sendFile(path.join(publicPath, 'index.html'), (err) => {
+    const indexPath = path.join(publicPath, 'index.html');
+    console.log('📄 Tentando servir:', indexPath);
+    res.sendFile(indexPath, (err) => {
         if (err) {
-            console.error('Erro ao enviar index.html:', err);
+            console.error('❌ Erro ao enviar index.html:', err);
             res.status(500).send('Erro ao carregar aplicação');
         }
     });
@@ -101,10 +116,16 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 // Inicia o servidor
 
 const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log('🚀 ========================================');
+    console.log('🚀 Servidor iniciado com sucesso!');
+    console.log('🚀 Porta:', PORT);
+    console.log('🚀 Ambiente:', process.env.NODE_ENV || 'development');
+    console.log('🚀 ========================================');
 });
 
 server.on('listening', () => {
     const addr = server.address();
+    console.log('✅ Servidor escutando em:', addr);
 });
 
 server.on('error', (error: any) => {
