@@ -619,8 +619,8 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
                                 </PopoverTrigger>
                                 <PopoverContent className="w-[400px] p-0 z-[90] bg-background" align="start">
                                   <Command>
-                                    <CommandInput 
-                                      placeholder="Pesquisar SKU..." 
+                                    <CommandInput
+                                      placeholder="Pesquisar SKU..."
                                       onValueChange={(value) => {
                                         // Busca local ao digitar
                                         const resultados = buscarSkuLocal(value);
