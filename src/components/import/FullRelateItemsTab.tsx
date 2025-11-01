@@ -10,7 +10,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { useImportClient } from '@/contexts/ImportClientContext';
 import { useFullImportData } from '@/hooks/useFullImportData';
-import { useApiData } from '@/hooks/useApiData';
 import type { FullEnvioPending, SkuSearchResult } from '@/hooks/useFullImportData';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -61,8 +60,26 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
     searchSku,
   } = useFullImportData();
 
-  // Carregar TODOS os produtos (igual o ML faz)
-  const { data: todosProdutos } = useApiData('Estoque');
+  // Carregar TODOS os produtos diretamente da API
+  const [todosProdutos, setTodosProdutos] = useState<any[]>([]);
+  const [loadingProdutos, setLoadingProdutos] = useState(true);
+
+  useEffect(() => {
+    const carregarProdutos = async () => {
+      try {
+        setLoadingProdutos(true);
+        const response = await fetch('/api/estoque');
+        const data = await response.json();
+        setTodosProdutos(data || []);
+      } catch (error) {
+        console.error('Erro ao carregar produtos:', error);
+        setTodosProdutos([]);
+      } finally {
+        setLoadingProdutos(false);
+      }
+    };
+    carregarProdutos();
+  }, []);
 
   // ✅ Garantir arrays seguros no componente (defesa em profundidade)
   const envios = Array.isArray(enviosRaw) ? enviosRaw : [];
