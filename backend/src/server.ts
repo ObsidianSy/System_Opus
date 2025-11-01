@@ -75,8 +75,18 @@ const publicPath = path.join(__dirname, '..', 'public');
 app.use(express.static(publicPath));
 
 // SPA fallback - todas as rotas não-API vão para index.html
-app.get('*', (req: Request, res: Response) => {
-    res.sendFile(path.join(publicPath, 'index.html'));
+app.get('*', (req: Request, res: Response, next: NextFunction) => {
+    // Se for rota de API que não existe, passa para o erro handler
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'Rota não encontrada' });
+    }
+    // Caso contrário, serve o index.html do frontend
+    res.sendFile(path.join(publicPath, 'index.html'), (err) => {
+        if (err) {
+            console.error('Erro ao enviar index.html:', err);
+            res.status(500).send('Erro ao carregar aplicação');
+        }
+    });
 });
 
 // Middleware de erro
