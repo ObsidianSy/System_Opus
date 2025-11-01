@@ -1,0 +1,36 @@
+# Multi-stage build: Frontend + Backend em um único container
+FROM node:18-alpine AS frontend-builder
+WORKDIR /app
+
+# Build do frontend
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# Stage final: Backend que serve o frontend
+FROM node:18-alpine
+WORKDIR /app
+
+# Instala dependências do backend
+COPY backend/package*.json ./
+RUN npm install --legacy-peer-deps --production
+
+# Copia código do backend
+COPY backend/tsconfig.json ./
+COPY backend/src ./src
+
+# Compila TypeScript do backend
+RUN npm install -g typescript
+RUN tsc
+
+# Copia o build do frontend para o backend servir
+COPY --from=frontend-builder /app/dist ./public
+
+# Variáveis de ambiente
+ENV NODE_ENV=production
+ENV PORT=3001
+
+EXPOSE 3001
+
+CMD ["node", "dist/server.js"]

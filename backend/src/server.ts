@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import dotenv from 'dotenv';
+import path from 'path';
 import { clientesRouter } from './routes/clientes';
 import { vendasRouter } from './routes/vendas';
 import { pagamentosRouter } from './routes/pagamentos';
@@ -69,6 +70,15 @@ app.use('/api/materia-prima', materiaPrimaRouter);
 app.use('/api/receita-produto', receitaProdutoRouter);
 app.use('/api/envios', enviosRouter);
 
+// Serve arquivos estáticos do frontend (se existir pasta public)
+const publicPath = path.join(__dirname, '..', 'public');
+app.use(express.static(publicPath));
+
+// SPA fallback - todas as rotas não-API vão para index.html
+app.get('*', (req: Request, res: Response) => {
+    res.sendFile(path.join(publicPath, 'index.html'));
+});
+
 // Middleware de erro
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     console.error('Erro:', err);
@@ -76,11 +86,6 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
         error: 'Erro interno do servidor',
         message: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
-});
-
-// Rota 404
-app.use((req: Request, res: Response) => {
-    res.status(404).json({ error: 'Rota não encontrada' });
 });
 
 // Inicia o servidor
