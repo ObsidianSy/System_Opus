@@ -27,6 +27,10 @@ COPY --from=builder /app/dist .
 # Copia configuração customizada do nginx
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# Copia e torna executável o entrypoint
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
