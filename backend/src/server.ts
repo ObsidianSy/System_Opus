@@ -41,7 +41,10 @@ app.use(cors({
 }));
 
 // Middlewares
-app.use(helmet()); // Segurança
+app.use(helmet({
+    contentSecurityPolicy: false, // Desabilita CSP para permitir scripts externos
+    crossOriginEmbedderPolicy: false,
+}));
 app.use(compression()); // Compressão de respostas
 app.use(express.json({ limit: '10mb' })); // Parser JSON
 app.use(express.urlencoded({ extended: true }));
@@ -85,7 +88,18 @@ if (fs.existsSync(publicPath)) {
     console.log('❌ Pasta public NÃO encontrada');
 }
 
-app.use(express.static(publicPath));
+// Serve arquivos estáticos com cabeçalhos corretos
+app.use(express.static(publicPath, {
+    maxAge: '1d',
+    etag: true,
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.js')) {
+            res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
+        } else if (filePath.endsWith('.css')) {
+            res.setHeader('Content-Type', 'text/css; charset=UTF-8');
+        }
+    }
+}));
 
 // SPA fallback - todas as rotas não-API vão para index.html
 app.get('*', (req: Request, res: Response, next: NextFunction) => {
