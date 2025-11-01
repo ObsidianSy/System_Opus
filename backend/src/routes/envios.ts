@@ -1061,10 +1061,12 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
 
         // Se create_alias=true, salvar como alias
         if (create_alias && alias_text) {
+            // Usar a mesma normalização que a constraint ux_sku_aliases_flat
             const existingAlias = await pool.query(
                 `SELECT id FROM obsidian.sku_aliases 
                  WHERE client_id = $1 
-                   AND LOWER(alias_text) = LOWER($2)`,
+                   AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                       UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))`,
                 [clientId, alias_text]
             );
 
