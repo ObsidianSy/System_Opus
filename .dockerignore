@@ -6,8 +6,9 @@ dist
 .env
 .env.local
 .DS_Store
-backend/
 docs/
 scripts-debug/
 README.md
 *.md
+backend/node_modules
+backend/dist
