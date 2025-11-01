@@ -838,8 +838,79 @@ enviosRouter.get('/search-sku', async (req: Request, res: Response) => {
 // Body: envio_id (para FULL) ou import_id (para ML), source
 enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
     try {
-        const { envio_id, import_id, source, client_id } = req.body;
+        const { envio_id, import_id, source, client_id, raw_id, sku, learn_alias, alias_text } = req.body;
 
+        // ========================================
+        // RELACIONAMENTO MANUAL INDIVIDUAL (ML)
+        // ========================================
+        if (raw_id && sku) {
+            console.log('📦 Relacionamento manual ML - raw_id:', raw_id, 'sku:', sku);
+
+            // Buscar informações do item
+            const itemResult = await pool.query(
+                `SELECT id, order_id, sku_text, client_id 
+                 FROM raw_export_orders 
+                 WHERE id = $1`,
+                [raw_id]
+            );
+
+            if (itemResult.rows.length === 0) {
+                return res.status(404).json({ error: 'Item não encontrado' });
+            }
+
+            const item = itemResult.rows[0];
+
+            // Atualizar o item com o SKU relacionado
+            await pool.query(
+                `UPDATE raw_export_orders 
+                 SET matched_sku = $1, 
+                     status = 'matched', 
+                     processed_at = NOW() 
+                 WHERE id = $2`,
+                [sku, raw_id]
+            );
+
+            // Se learn_alias=true, salvar como alias
+            if (learn_alias && (alias_text || item.sku_text)) {
+                const textToLearn = alias_text || item.sku_text;
+
+                // Usar a mesma normalização que a constraint ux_sku_aliases_flat
+                const existingAlias = await pool.query(
+                    `SELECT id FROM obsidian.sku_aliases 
+                     WHERE client_id = $1 
+                       AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                           UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))`,
+                    [item.client_id, textToLearn]
+                );
+
+                if (existingAlias.rows.length === 0) {
+                    await pool.query(
+                        `INSERT INTO obsidian.sku_aliases 
+                         (client_id, alias_text, stock_sku, confidence_default, times_used) 
+                         VALUES ($1, $2, $3, 0.95, 1)`,
+                        [item.client_id, textToLearn, sku]
+                    );
+                    console.log('✅ Alias criado:', textToLearn, '->', sku);
+                } else {
+                    await pool.query(
+                        `UPDATE obsidian.sku_aliases 
+                         SET stock_sku = $1, 
+                             times_used = times_used + 1, 
+                             last_used_at = NOW() 
+                         WHERE id = $2`,
+                        [sku, existingAlias.rows[0].id]
+                    );
+                    console.log('✅ Alias atualizado:', textToLearn, '->', sku);
+                }
+            }
+
+            console.log('✅ Item relacionado com sucesso');
+            return res.json({ ok: true, raw_id, matched_sku: sku, alias_learned: !!learn_alias });
+        }
+
+        // ========================================
+        // AUTO-RELACIONAMENTO (FULL ou ML)
+        // ========================================
 
         if (source === 'FULL') {
             if (!envio_id) {
@@ -928,15 +999,85 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
                 status: newStatus
             });
         } else {
-            // ML: manter lógica antiga
-            await pool.query(
-                `UPDATE obsidian.import_batches 
-                 SET status = 'relacionado' 
-                 WHERE import_id = $1 AND source = $2`,
-                [import_id, source]
-            );
+            // ML: relacionar automaticamente via aliases
+            console.log('📦 Relacionando ML - client_id:', client_id, 'source:', source);
 
-            res.json({ success: true, message: 'SKUs relacionados com sucesso' });
+            // Buscar todos os itens pendentes (filtrado por cliente se fornecido)
+            let query = `SELECT id, order_id as codigo_ml, sku_text as sku_original, client_id
+                         FROM raw_export_orders
+                         WHERE (status = 'pending' OR matched_sku IS NULL)`;
+            const params: any[] = [];
+
+            if (client_id) {
+                params.push(client_id);
+                query += ` AND client_id = $${params.length}`;
+            }
+
+            const pendingItems = await pool.query(query, params);
+
+            console.log(`📦 Encontrados ${pendingItems.rows.length} itens pendentes para relacionar`);
+
+            let matched = 0;
+            let notMatched = 0;
+
+            // Log dos primeiros 5 itens para debug
+            console.log('📦 Primeiros 5 itens pendentes:', pendingItems.rows.slice(0, 5).map(i => ({
+                id: i.id,
+                codigo_ml: i.codigo_ml,
+                sku_original: i.sku_original,
+                client_id: i.client_id
+            })));
+
+            for (const item of pendingItems.rows) {
+                // Buscar alias que corresponde ao SKU original (usando o client_id do item)
+                const aliasResult = await pool.query(
+                    `SELECT stock_sku, confidence_default, id 
+                     FROM obsidian.sku_aliases 
+                     WHERE client_id = $1 
+                       AND (LOWER(alias_text) = LOWER($2) OR LOWER(alias_text) = LOWER($3))
+                     ORDER BY confidence_default DESC 
+                     LIMIT 1`,
+                    [item.client_id, item.codigo_ml, item.sku_original]
+                );
+
+                if (aliasResult.rows.length > 0) {
+                    const alias = aliasResult.rows[0];
+
+                    // Atualizar o item com o SKU encontrado
+                    await pool.query(
+                        `UPDATE raw_export_orders 
+                         SET matched_sku = $1, 
+                             status = 'matched', 
+                             processed_at = NOW() 
+                         WHERE id = $2`,
+                        [alias.stock_sku, item.id]
+                    );
+
+                    // Atualizar contador de uso do alias
+                    await pool.query(
+                        `UPDATE obsidian.sku_aliases 
+                         SET times_used = times_used + 1, 
+                             last_used_at = NOW() 
+                         WHERE id = $1`,
+                        [alias.id]
+                    );
+
+                    matched++;
+                } else {
+                    notMatched++;
+                }
+            }
+
+            console.log(`✅ ML Relacionados: ${matched} | Pendentes: ${notMatched}`);
+
+            res.json({
+                success: true,
+                message: 'Auto-relacionamento ML concluído',
+                total: pendingItems.rows.length,
+                relacionados: matched,
+                pendentes: notMatched,
+                taxa_match: pendingItems.rows.length > 0 ? (matched / pendingItems.rows.length) * 100 : 0
+            });
         }
     } catch (error: any) {
         console.error('Erro ao relacionar SKUs:', error);
