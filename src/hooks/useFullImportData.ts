@@ -56,12 +56,72 @@ export interface SkuSearchResult {
 export const useFullImportData = () => {
   // ✅ Sempre inicializar com arrays vazios, nunca undefined
   const [envios, setEnvios] = useState<FullEnvioListItem[]>([]);
+  const { data: todosProdutos } = useApiData('Estoque');
   const [items, setItems] = useState<FullEnvioItem[]>([]);
   const [pendings, setPendings] = useState<FullEnvioPending[]>([]);
   const [summary, setSummary] = useState<FullEnvioSummary | null>(null);
   const [currentEnvioId, setCurrentEnvioId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+
+
+  const buscarSkuLocal = useCallback((termo: string): SkuSearchResult[] => {
+    if (!todosProdutos || todosProdutos.length === 0) return [];
+
+    const termoUpper = termo.toUpperCase().trim();
+
+    if (termoUpper === '' || termoUpper === '*') {
+      return todosProdutos.slice(0, 100).map((p: any) => ({
+        sku: p.sku,
+        nome: p.nome,
+        preco_unitario: p.preco_unitario,
+        quantidade_atual: p.quantidade_atual,
+        is_kit: p.is_kit || p.tipo_produto === 'KIT',
+        source: 'all' as const,
+        score: 1.0
+      }));
+    }
+
+    const resultados: SkuSearchResult[] = [];
+
+    todosProdutos.forEach((p: any) => {
+      const skuUpper = (p.sku || '').toUpperCase();
+      const nomeUpper = (p.nome || '').toUpperCase();
+
+      let score = 0;
+      let source: 'exact' | 'prefix' | 'fuzzy' | 'alias' = 'fuzzy';
+
+      if (skuUpper === termoUpper) {
+        score = 1.0;
+        source = 'exact';
+      } else if (skuUpper.startsWith(termoUpper)) {
+        score = 0.8;
+        source = 'prefix';
+      } else if (skuUpper.includes(termoUpper)) {
+        score = 0.6;
+        source = 'fuzzy';
+      } else if (nomeUpper.includes(termoUpper)) {
+        score = 0.4;
+        source = 'fuzzy';
+      }
+
+      if (score > 0) {
+        resultados.push({
+          sku: p.sku,
+          nome: p.nome,
+          preco_unitario: p.preco_unitario,
+          quantidade_atual: p.quantidade_atual,
+          is_kit: p.is_kit || p.tipo_produto === 'KIT',
+          source: source,
+          score: score
+        });
+      }
+    });
+
+    return resultados
+      .sort((a, b) => b.score !== a.score ? b.score - a.score : a.sku.localeCompare(b.sku))
+      .slice(0, 100);
+  }, [todosProdutos]);
 
   const loadEnvios = useCallback(async (clienteNome: string, dias = 30) => {
     setIsLoading(true);
