@@ -8,8 +8,8 @@ RUN apk add --no-cache python3 make g++
 # Copia manifestos primeiro para melhor cache
 COPY package*.json ./
 
-# Instala dependências
-RUN npm ci --legacy-peer-deps
+# Instala dependências (produção + dev para build)
+RUN npm install --legacy-peer-deps
 
 # Copia fontes
 COPY tsconfig.json ./
