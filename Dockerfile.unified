@@ -12,17 +12,19 @@ RUN npm run build
 FROM node:18-alpine
 WORKDIR /app
 
-# Instala dependências do backend
+# Instala dependências do backend (todas, incluindo devDependencies para build)
 COPY backend/package*.json ./
-RUN npm install --legacy-peer-deps --production
+RUN npm install --legacy-peer-deps
 
 # Copia código do backend
 COPY backend/tsconfig.json ./
 COPY backend/src ./src
 
 # Compila TypeScript do backend
-RUN npm install -g typescript
-RUN tsc
+RUN npm run build
+
+# Remove devDependencies após build
+RUN npm prune --production --legacy-peer-deps
 
 # Copia o build do frontend para o backend servir
 COPY --from=frontend-builder /app/dist ./public
