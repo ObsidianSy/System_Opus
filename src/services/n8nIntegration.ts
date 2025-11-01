@@ -1,4 +1,5 @@
 // Serviços de integração com n8n
+import { getApiUrl as getBaseApiUrl } from '@/config/api';
 
 // Interfaces para as diferentes entidades
 export interface VendaItem {
@@ -87,21 +88,9 @@ export interface N8nRequest {
   sku?: string; // Para operações de delete
 }
 
-// URLs da API Backend - podem ser configuradas
-const API_URLS = {
-  dev: 'http://localhost:3001/api',  // ✅ CORRETO - porta 3001
-  prod: 'http://localhost:3001/api'
-};
-
-// Detecta ambiente baseado na URL atual
-const getEnvironment = (): 'dev' | 'prod' => {
-  return window.location.hostname === 'localhost' ? 'dev' : 'prod';
-};
-
-// URL base da API
+// URL base da API (usa configuração centralizada)
 const getApiUrl = (): string => {
-  const env = getEnvironment();
-  return API_URLS[env];
+  return getBaseApiUrl('/api');
 };
 
 // Mapeamento de sheetName para endpoints da API

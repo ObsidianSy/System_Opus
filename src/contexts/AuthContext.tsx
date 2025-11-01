@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getApiUrl } from '@/config/api';
 
 interface Usuario {
     id: string;
@@ -33,7 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (tokenSalvo && usuarioSalvo) {
                 try {
                     // Verificar se token ainda é válido
-                    const response = await fetch('http://localhost:3001/api/auth/verify', {
+                    const response = await fetch(getApiUrl('/api/auth/verify'), {
                         headers: {
                             'Authorization': `Bearer ${tokenSalvo}`
                         }

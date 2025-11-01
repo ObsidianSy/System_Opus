@@ -8,6 +8,7 @@ import { DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { consultarDados } from "@/services/n8nIntegration";
 import { sortBySKU } from "@/utils/sortUtils";
+import { getApiUrl } from "@/config/api";
 
 interface ProdutoOption {
   SKU: string;
@@ -36,7 +37,7 @@ export default function EntradaProdutoForm({ onSuccess }: EntradaProdutoFormProp
 
   const carregarProdutos = async () => {
     try {
-      const response = await fetch("http://localhost:3001/api/estoque");
+      const response = await fetch(getApiUrl("/api/estoque"));
       const dados = await response.json();
 
       // Adaptar formato para o select
@@ -96,7 +97,7 @@ export default function EntradaProdutoForm({ onSuccess }: EntradaProdutoFormProp
       console.log("📤 Enviando entrada de produto:", payload);
 
       const response = await fetch(
-        "http://localhost:3001/api/estoque/entrada",
+        getApiUrl("/api/estoque/entrada"),
         {
           method: "POST",
           headers: {
