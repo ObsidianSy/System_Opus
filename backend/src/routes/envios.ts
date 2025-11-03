@@ -29,12 +29,12 @@ async function normalizeClientId(clientIdInput: any): Promise<number | null> {
             `SELECT id FROM obsidian.clientes WHERE UPPER(nome) ILIKE UPPER($1) LIMIT 1`,
             [clientIdInput]
         );
-        
+
         if (result.rows.length === 0) {
             console.warn(`⚠️ Cliente "${clientIdInput}" não encontrado no banco`);
             return null;
         }
-        
+
         return result.rows[0].id;
     } catch (error) {
         console.error('❌ Erro ao normalizar client_id:', error);
