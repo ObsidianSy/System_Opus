@@ -14,7 +14,15 @@ const upload = multer({ dest: 'uploads/' });
 
 export const enviosRouter = Router();
 
-// 🔧 Helper: Normalizar client_id (aceita nome ou ID numérico)
+// � Armazenar progresso de uploads em memória
+const uploadProgress = new Map<string, {
+    stage: string;
+    current: number;
+    total: number;
+    message: string;
+}>();
+
+// �🔧 Helper: Normalizar client_id (aceita nome ou ID numérico)
 async function normalizeClientId(clientIdInput: any): Promise<number | null> {
     if (!clientIdInput) return null;
 
@@ -71,7 +79,45 @@ function parseExcelDate(dateValue: any): Date | null {
         console.warn(`⚠️ Erro ao parsear data: ${dateValue}`);
         return null;
     }
-}// GET - Buscar detalhes de um envio específico com suas linhas
+}
+
+// 📡 SSE - Endpoint para receber progresso em tempo real
+enviosRouter.get('/upload-progress/:importId', (req: Request, res: Response) => {
+    const { importId } = req.params;
+
+    // Configurar SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    // Enviar progresso inicial
+    const sendProgress = () => {
+        const progress = uploadProgress.get(importId);
+        if (progress) {
+            res.write(`data: ${JSON.stringify(progress)}\n\n`);
+
+            // Se completou, fechar conexão após 2 segundos
+            if (progress.stage === 'completed' || progress.stage === 'error') {
+                setTimeout(() => {
+                    uploadProgress.delete(importId);
+                    res.end();
+                }, 2000);
+            }
+        }
+    };
+
+    // Enviar atualizações a cada 500ms
+    const interval = setInterval(sendProgress, 500);
+
+    // Cleanup quando cliente desconectar
+    req.on('close', () => {
+        clearInterval(interval);
+        res.end();
+    });
+});
+
+// GET - Buscar detalhes de um envio específico com suas linhas
 // Parâmetros: envio_id
 enviosRouter.get('/:envio_id/detalhes', async (req: Request, res: Response) => {
     try {
@@ -771,6 +817,14 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
             console.log(`📦 Processando ${jsonData.length} linhas do Excel ML...`);
 
+            // Inicializar progresso
+            uploadProgress.set(batchId, {
+                stage: 'processing',
+                current: 0,
+                total: jsonData.length,
+                message: 'Processando arquivo Excel...'
+            });
+
             // OTIMIZAÇÃO: Preparar dados em lote para bulk insert
             const valuesToInsert: any[][] = [];
             const skippedRows: number[] = [];
@@ -901,11 +955,21 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                             total = EXCLUDED.total,
                             import_id = EXCLUDED.import_id,
                             original_filename = EXCLUDED.original_filename,
-                            row_num = EXCLUDED.row_num`,
+                            row_num = EXCLUDED.row_num,
+                            status = EXCLUDED.status,
+                            processed_at = NULL`,
                         flatValues
                     );
                     insertedRows += batch.length;
                     console.log(`  ✅ Lote ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} linhas inseridas/atualizadas`);
+
+                    // Atualizar progresso
+                    uploadProgress.set(batchId, {
+                        stage: 'inserting',
+                        current: insertedRows,
+                        total: uniqueValues.length,
+                        message: `Inserindo ${insertedRows}/${uniqueValues.length} linhas...`
+                    });
                 } catch (batchError: any) {
                     console.error(`❌ Erro no lote ${Math.floor(i / BATCH_SIZE) + 1}:`, batchError.message);
                     errors.push(`Lote ${Math.floor(i / BATCH_SIZE) + 1}: ${batchError.message}`);
@@ -923,6 +987,14 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             if (insertedRows > 0) {
                 console.log(`🔄 Iniciando auto-relacionamento...`);
 
+                // Inicializar progresso
+                uploadProgress.set(batchId, {
+                    stage: 'relating',
+                    current: 0,
+                    total: 0,
+                    message: 'Iniciando auto-relacionamento...'
+                });
+
                 // Buscar todas as linhas recém-inseridas
                 const pendingRows = await pool.query(
                     `SELECT id, sku_text 
@@ -933,11 +1005,30 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
                 console.log(`📦 Processando ${pendingRows.rows.length} linhas para auto-relacionamento em batches...`);
 
+                // Atualizar progresso
+                uploadProgress.set(batchId, {
+                    stage: 'relating',
+                    current: 0,
+                    total: pendingRows.rows.length,
+                    message: `Relacionando 0/${pendingRows.rows.length} SKUs...`
+                });
+
                 // Processar em batches de 100 para evitar timeout
                 const RELATE_BATCH_SIZE = 100;
                 for (let i = 0; i < pendingRows.rows.length; i += RELATE_BATCH_SIZE) {
                     const batch = pendingRows.rows.slice(i, i + RELATE_BATCH_SIZE);
-                    console.log(`🔍 Relacionando batch ${Math.floor(i / RELATE_BATCH_SIZE) + 1}/${Math.ceil(pendingRows.rows.length / RELATE_BATCH_SIZE)} (${batch.length} linhas)...`);
+                    const batchNum = Math.floor(i / RELATE_BATCH_SIZE) + 1;
+                    const totalBatches = Math.ceil(pendingRows.rows.length / RELATE_BATCH_SIZE);
+
+                    console.log(`🔍 Relacionando batch ${batchNum}/${totalBatches} (${batch.length} linhas)...`);
+
+                    // Atualizar progresso
+                    uploadProgress.set(batchId, {
+                        stage: 'relating',
+                        current: i,
+                        total: pendingRows.rows.length,
+                        message: `Batch ${batchNum}/${totalBatches} - ${autoMatched} relacionados`
+                    });
 
                     for (const row of batch) {
                         let matchedSku: string | null = null;
@@ -1001,6 +1092,14 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 }
 
                 console.log(`✅ Auto-relacionamento concluído: ${autoMatched} itens relacionados`);
+
+                // Atualizar progresso final
+                uploadProgress.set(batchId, {
+                    stage: 'completed',
+                    current: pendingRows.rows.length,
+                    total: pendingRows.rows.length,
+                    message: `✅ Concluído! ${autoMatched} relacionados`
+                });
             }
 
             // Contar pendentes restantes

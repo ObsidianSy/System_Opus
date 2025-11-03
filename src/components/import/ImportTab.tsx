@@ -1,4 +1,4 @@
-import { useState, memo } from 'react';
+import { useState, memo, useEffect, useRef } from 'react';
 import { Upload, FileSpreadsheet, AlertCircle, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -14,20 +14,39 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CalendarIcon } from "lucide-react";
+
+interface UploadProgress {
+  stage: string;
+  current: number;
+  total: number;
+  message: string;
+}
+
 export const ImportTab = memo(function ImportTab() {
   const { usuario } = useAuth();
   const [selectedClient, setSelectedClient] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [progressMessage, setProgressMessage] = useState('');
   const [importId, setImportId] = useState<string | null>(null);
   const [isEmitting, setIsEmitting] = useState(false);
+  const eventSourceRef = useRef<EventSource | null>(null);
   const {
     toast
   } = useToast();
   const {
     data: clientes
   } = useApiData('Clientes');
+
+  // Cleanup do EventSource quando componente desmontar
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -46,11 +65,9 @@ export const ImportTab = memo(function ImportTab() {
     }
     setIsUploading(true);
     setUploadProgress(0);
+    setProgressMessage('Enviando arquivo...');
+
     try {
-      // Simulate progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => Math.min(prev + 10, 90));
-      }, 200);
       const response = await importService.uploadFile(
         selectedClient,
         selectedFile,
@@ -59,23 +76,58 @@ export const ImportTab = memo(function ImportTab() {
         usuario?.email || 'usuario@sistema.com',
         usuario?.nome || 'Usuário Sistema'
       );
-      clearInterval(progressInterval);
-      setUploadProgress(100);
-      setImportId(response.import_id);
-      toast({
-        title: 'Upload concluído',
-        description: `Importação iniciada com ID: ${response.import_id}`
-      });
 
-      // Reset form
-      setTimeout(() => {
-        setSelectedFile(null);
-        setUploadProgress(0);
+      const batchId = response.import_id;
+      setImportId(batchId);
+
+      // Conectar ao SSE para receber progresso em tempo real
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const eventSource = new EventSource(`${apiUrl}/api/envios/upload-progress/${batchId}`);
+      eventSourceRef.current = eventSource;
+
+      eventSource.onmessage = (event) => {
+        const progress: UploadProgress = JSON.parse(event.data);
+
+        // Calcular porcentagem
+        const percentage = progress.total > 0
+          ? Math.round((progress.current / progress.total) * 100)
+          : 0;
+
+        setUploadProgress(percentage);
+        setProgressMessage(progress.message);
+
+        // Se completou, fechar conexão
+        if (progress.stage === 'completed') {
+          eventSource.close();
+          toast({
+            title: 'Upload concluído!',
+            description: progress.message
+          });
+
+          // Reset form após 2 segundos
+          setTimeout(() => {
+            setSelectedFile(null);
+            setUploadProgress(0);
+            setProgressMessage('');
+            setIsUploading(false);
+          }, 2000);
+        }
+      };
+
+      eventSource.onerror = () => {
+        eventSource.close();
         setIsUploading(false);
-      }, 2000);
+        toast({
+          title: 'Erro no progresso',
+          description: 'Conexão de progresso perdida, mas upload pode ter sido concluído.',
+          variant: 'destructive'
+        });
+      };
+
     } catch (error) {
       setIsUploading(false);
       setUploadProgress(0);
+      setProgressMessage('');
       toast({
         title: 'Erro no upload',
         description: 'Falha ao enviar arquivo. Tente novamente.',
@@ -200,9 +252,16 @@ export const ImportTab = memo(function ImportTab() {
         {/* Progress */}
         {isUploading && <div className="space-y-2">
           <Progress value={uploadProgress} className="h-2" />
-          <p className="text-xs text-muted-foreground text-center">
-            Enviando... {uploadProgress}%
-          </p>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground text-center">
+              {uploadProgress}%
+            </p>
+            {progressMessage && (
+              <p className="text-sm text-muted-foreground text-center">
+                {progressMessage}
+              </p>
+            )}
+          </div>
         </div>}
 
         {/* Botão de Envio */}
