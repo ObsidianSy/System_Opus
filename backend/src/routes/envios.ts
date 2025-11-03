@@ -870,11 +870,34 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                             channel,
                             status,
                             created_at
-                        ) VALUES ${placeholders}`,
+                        ) VALUES ${placeholders}
+                        ON CONFLICT (order_id, sku_text) 
+                        DO UPDATE SET
+                            "Nº de Pedido da Plataforma" = EXCLUDED."Nº de Pedido da Plataforma",
+                            "Nº de Pedido" = EXCLUDED."Nº de Pedido",
+                            "Plataformas" = EXCLUDED."Plataformas",
+                            "Nome da Loja no UpSeller" = EXCLUDED."Nome da Loja no UpSeller",
+                            "Estado do Pedido" = EXCLUDED."Estado do Pedido",
+                            "Hora do Pedido" = EXCLUDED."Hora do Pedido",
+                            "Hora do Pagamento" = EXCLUDED."Hora do Pagamento",
+                            "SKU" = EXCLUDED."SKU",
+                            "Qtd. do Produto" = EXCLUDED."Qtd. do Produto",
+                            "Preço de Produto" = EXCLUDED."Preço de Produto",
+                            "Nome de Comprador" = EXCLUDED."Nome de Comprador",
+                            qty = EXCLUDED.qty,
+                            unit_price = EXCLUDED.unit_price,
+                            total = EXCLUDED.total,
+                            customer = EXCLUDED.customer,
+                            channel = EXCLUDED.channel,
+                            order_date = EXCLUDED.order_date,
+                            import_id = EXCLUDED.import_id,
+                            original_filename = EXCLUDED.original_filename,
+                            row_num = EXCLUDED.row_num,
+                            updated_at = NOW()`,
                         flatValues
                     );
                     insertedRows += batch.length;
-                    console.log(`  ✅ Lote ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} linhas inseridas`);
+                    console.log(`  ✅ Lote ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} linhas inseridas/atualizadas`);
                 } catch (batchError: any) {
                     console.error(`❌ Erro no lote ${Math.floor(i / BATCH_SIZE) + 1}:`, batchError.message);
                     errors.push(`Lote ${Math.floor(i / BATCH_SIZE) + 1}: ${batchError.message}`);
