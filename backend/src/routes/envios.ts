@@ -14,6 +14,34 @@ const upload = multer({ dest: 'uploads/' });
 
 export const enviosRouter = Router();
 
+// 🔧 Helper: Normalizar client_id (aceita nome ou ID numérico)
+async function normalizeClientId(clientIdInput: any): Promise<number | null> {
+    if (!clientIdInput) return null;
+
+    // Se já é número, retornar
+    if (!isNaN(Number(clientIdInput))) {
+        return Number(clientIdInput);
+    }
+
+    // Se é string (nome do cliente), buscar ID
+    try {
+        const result = await pool.query(
+            `SELECT id FROM obsidian.clientes WHERE UPPER(nome) ILIKE UPPER($1) LIMIT 1`,
+            [clientIdInput]
+        );
+
+        if (result.rows.length === 0) {
+            console.warn(`⚠️ Cliente "${clientIdInput}" não encontrado no banco`);
+            return null;
+        }
+
+        return result.rows[0].id;
+    } catch (error) {
+        console.error('❌ Erro ao normalizar client_id:', error);
+        return null;
+    }
+}
+
 // GET - Buscar detalhes de um envio específico com suas linhas
 // Parâmetros: envio_id
 enviosRouter.get('/:envio_id/detalhes', async (req: Request, res: Response) => {
@@ -92,21 +120,11 @@ enviosRouter.get('/', async (req: Request, res: Response) => {
 
         // Se list_all_items=true, retorna TODOS os itens raw do cliente (não só o último envio)
         if (source === 'FULL' && client_id && !envio_num && list_all_items === 'true') {
-            // Buscar ID do cliente (client_id pode vir como nome)
-            let clientIdNum: number;
-            if (isNaN(parseInt(client_id as string))) {
-                const clientResult = await pool.query(
-                    `SELECT id FROM obsidian.clientes WHERE UPPER(nome) = UPPER($1)`,
-                    [client_id]
-                );
-                if (clientResult.rows.length === 0) {
-                    return res.json([]);
-                }
-                clientIdNum = parseInt(clientResult.rows[0].id);
-            } else {
-                clientIdNum = parseInt(client_id as string);
+            // 🔧 Normalizar client_id (aceita nome ou ID)
+            const clientIdNum = await normalizeClientId(client_id);
+            if (!clientIdNum) {
+                return res.json([]);
             }
-
 
             // Buscar todos os itens raw do cliente
             const clientItemsResult = await pool.query(
@@ -407,28 +425,15 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
         const { client_id, source = 'ML', envio_num, import_date } = req.body;
         const filename = req.file.originalname || req.file.filename;
 
-
         // Validar client_id obrigatório
         if (!client_id) {
             return res.status(400).json({ error: 'client_id é obrigatório' });
         }
 
-        // Buscar ID do cliente se vier string (nome)
-        let clientIdNum: number;
-        if (isNaN(parseInt(client_id))) {
-            // É um nome, buscar o ID
-            const clientResult = await pool.query(
-                `SELECT id FROM obsidian.clientes WHERE nome = $1`,
-                [client_id]
-            );
-
-            if (clientResult.rows.length === 0) {
-                return res.status(400).json({ error: `Cliente "${client_id}" não encontrado` });
-            }
-
-            clientIdNum = parseInt(clientResult.rows[0].id);
-        } else {
-            clientIdNum = parseInt(client_id);
+        // 🔧 Normalizar client_id (aceita nome ou ID)
+        const clientIdNum = await normalizeClientId(client_id);
+        if (!clientIdNum) {
+            return res.status(400).json({ error: `Cliente "${client_id}" não encontrado` });
         }
 
         // Processar Excel
@@ -436,7 +441,6 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
-
 
         // Log das colunas do Excel para debug
         if (jsonData.length > 0) {
@@ -738,7 +742,10 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
             console.log(`📦 Processando ${jsonData.length} linhas do Excel ML...`);
 
-            // Inserir cada linha em raw_export_orders
+            // OTIMIZAÇÃO: Preparar dados em lote para bulk insert
+            const valuesToInsert: any[][] = [];
+            const skippedRows: number[] = [];
+
             for (let i = 0; i < jsonData.length; i++) {
                 const row = jsonData[i];
 
@@ -754,10 +761,58 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     const channel = row['Plataformas'] || row['Nome da Loja no UpSeller'] || 'ML';
 
                     if (!sku || qty <= 0) {
-                        continue; // Pular linhas sem SKU ou quantidade
+                        skippedRows.push(i + 1);
+                        continue;
                     }
 
-                    // Inserir em raw_export_orders (com TODAS as colunas do Excel)
+                    valuesToInsert.push([
+                        orderIdPlatform,
+                        orderIdInternal,
+                        row['Plataformas'],
+                        row['Nome da Loja no UpSeller'],
+                        row['Estado do Pedido'],
+                        row['Hora do Pedido'],
+                        row['Hora do Pagamento'],
+                        sku,
+                        qty,
+                        unitPrice,
+                        customer,
+                        clientIdNum,
+                        batchId,
+                        filename,
+                        i + 1,
+                        orderIdPlatform || orderIdInternal,
+                        orderDate ? new Date(orderDate) : null,
+                        sku,
+                        qty,
+                        unitPrice,
+                        unitPrice * qty,
+                        customer,
+                        channel,
+                        'pending'
+                    ]);
+                } catch (rowError: any) {
+                    console.error(`Erro ao processar linha ${i + 1}:`, rowError.message);
+                    errors.push(`Linha ${i + 1}: ${rowError.message}`);
+                }
+            }
+
+            // BULK INSERT em lotes de 500 linhas
+            const BATCH_SIZE = 500;
+            console.log(`📦 Inserindo ${valuesToInsert.length} linhas em lotes de ${BATCH_SIZE}...`);
+
+            for (let i = 0; i < valuesToInsert.length; i += BATCH_SIZE) {
+                const batch = valuesToInsert.slice(i, i + BATCH_SIZE);
+
+                // Construir placeholders ($1, $2, ..., $24)
+                const placeholders = batch.map((_, idx) => {
+                    const offset = idx * 24;
+                    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, $${offset + 17}, $${offset + 18}, $${offset + 19}, $${offset + 20}, $${offset + 21}, $${offset + 22}, $${offset + 23}, $${offset + 24}, NOW())`;
+                }).join(',');
+
+                const flatValues = batch.flat();
+
+                try {
                     await pool.query(
                         `INSERT INTO raw_export_orders (
                             "Nº de Pedido da Plataforma",
@@ -785,46 +840,21 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                             channel,
                             status,
                             created_at
-                        ) VALUES (
-                            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                            $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW()
-                        )`,
-                        [
-                            orderIdPlatform,
-                            orderIdInternal,
-                            row['Plataformas'],
-                            row['Nome da Loja no UpSeller'],
-                            row['Estado do Pedido'],
-                            row['Hora do Pedido'],
-                            row['Hora do Pagamento'],
-                            sku,
-                            qty,
-                            unitPrice,
-                            customer,
-                            clientIdNum,
-                            batchId,
-                            filename,
-                            i + 1,
-                            orderIdPlatform || orderIdInternal,
-                            orderDate ? new Date(orderDate) : null,
-                            sku,
-                            qty,
-                            unitPrice,
-                            unitPrice * qty,
-                            customer,
-                            channel,
-                            'pending' // Status inicial
-                        ]
+                        ) VALUES ${placeholders}`,
+                        flatValues
                     );
-
-                    insertedRows++;
-                } catch (rowError: any) {
-                    console.error(`Erro na linha ${i + 1}:`, rowError.message);
-                    errors.push(`Linha ${i + 1}: ${rowError.message}`);
+                    insertedRows += batch.length;
+                    console.log(`  ✅ Lote ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} linhas inseridas`);
+                } catch (batchError: any) {
+                    console.error(`❌ Erro no lote ${Math.floor(i / BATCH_SIZE) + 1}:`, batchError.message);
+                    errors.push(`Lote ${Math.floor(i / BATCH_SIZE) + 1}: ${batchError.message}`);
                 }
             }
 
             console.log(`✅ ${insertedRows} linhas inseridas em raw_export_orders`);
+            if (skippedRows.length > 0) {
+                console.log(`⚠️  ${skippedRows.length} linhas puladas (sem SKU ou qtd <= 0)`);
+            }
 
             // AUTO-RELACIONAR com aliases aprendidos (igual ao FULL)
             let autoMatched = 0;
@@ -836,69 +866,77 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 const pendingRows = await pool.query(
                     `SELECT id, sku_text 
                      FROM raw_export_orders 
-                     WHERE import_id = $1 AND status = 'pending'`,
+                     WHERE import_id = $1 AND status = 'pending'
+                     LIMIT 1000`,
                     [batchId]
                 );
 
-                console.log(`📦 Processando ${pendingRows.rows.length} linhas para auto-relacionamento...`);
+                console.log(`📦 Processando ${pendingRows.rows.length} linhas para auto-relacionamento em batches...`);
 
-                for (const row of pendingRows.rows) {
-                    let matchedSku: string | null = null;
-                    let matchSource: string = '';
+                // Processar em batches de 100 para evitar timeout
+                const RELATE_BATCH_SIZE = 100;
+                for (let i = 0; i < pendingRows.rows.length; i += RELATE_BATCH_SIZE) {
+                    const batch = pendingRows.rows.slice(i, i + RELATE_BATCH_SIZE);
+                    console.log(`🔍 Relacionando batch ${Math.floor(i / RELATE_BATCH_SIZE) + 1}/${Math.ceil(pendingRows.rows.length / RELATE_BATCH_SIZE)} (${batch.length} linhas)...`);
 
-                    // 1️⃣ PRIMEIRO: Buscar SKU exato na tabela produtos
-                    const produtoResult = await pool.query(
-                        `SELECT sku 
-                         FROM obsidian.produtos 
-                         WHERE UPPER(sku) = UPPER(TRIM($1))
-                         LIMIT 1`,
-                        [row.sku_text]
-                    );
+                    for (const row of batch) {
+                        let matchedSku: string | null = null;
+                        let matchSource: string = '';
 
-                    if (produtoResult.rows.length > 0) {
-                        matchedSku = produtoResult.rows[0].sku;
-                        matchSource = 'produto_exato';
-                    } else {
-                        // 2️⃣ SEGUNDO: Buscar em aliases com normalização
-                        const aliasResult = await pool.query(
-                            `SELECT stock_sku, confidence_default, id 
-                             FROM obsidian.sku_aliases 
-                             WHERE client_id = $1 
-                               AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
-                                   UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
-                             ORDER BY confidence_default DESC, times_used DESC 
+                        // 1️⃣ PRIMEIRO: Buscar SKU exato na tabela produtos
+                        const produtoResult = await pool.query(
+                            `SELECT sku 
+                             FROM obsidian.produtos 
+                             WHERE UPPER(sku) = UPPER(TRIM($1))
                              LIMIT 1`,
-                            [clientIdNum, row.sku_text]
+                            [row.sku_text]
                         );
 
-                        if (aliasResult.rows.length > 0) {
-                            matchedSku = aliasResult.rows[0].stock_sku;
-                            matchSource = 'alias';
-
-                            // Atualizar contador de uso do alias
-                            await pool.query(
-                                `UPDATE obsidian.sku_aliases 
-                                 SET times_used = times_used + 1, 
-                                     last_used_at = NOW() 
-                                 WHERE id = $1`,
-                                [aliasResult.rows[0].id]
+                        if (produtoResult.rows.length > 0) {
+                            matchedSku = produtoResult.rows[0].sku;
+                            matchSource = 'produto_exato';
+                        } else {
+                            // 2️⃣ SEGUNDO: Buscar em aliases com normalização
+                            const aliasResult = await pool.query(
+                                `SELECT stock_sku, confidence_default, id 
+                                 FROM obsidian.sku_aliases 
+                                 WHERE client_id = $1 
+                                   AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                       UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
+                                 ORDER BY confidence_default DESC, times_used DESC 
+                                 LIMIT 1`,
+                                [clientIdNum, row.sku_text]
                             );
+
+                            if (aliasResult.rows.length > 0) {
+                                matchedSku = aliasResult.rows[0].stock_sku;
+                                matchSource = 'alias';
+
+                                // Atualizar contador de uso do alias
+                                await pool.query(
+                                    `UPDATE obsidian.sku_aliases 
+                                     SET times_used = times_used + 1, 
+                                         last_used_at = NOW() 
+                                     WHERE id = $1`,
+                                    [aliasResult.rows[0].id]
+                                );
+                            }
                         }
-                    }
 
-                    // Se encontrou match, relacionar
-                    if (matchedSku) {
-                        await pool.query(
-                            `UPDATE raw_export_orders 
-                             SET matched_sku = $1, 
-                                 status = 'matched', 
-                                 match_source = $2,
-                                 processed_at = NOW() 
-                             WHERE id = $3`,
-                            [matchedSku, matchSource, row.id]
-                        );
+                        // Se encontrou match, relacionar
+                        if (matchedSku) {
+                            await pool.query(
+                                `UPDATE raw_export_orders 
+                                 SET matched_sku = $1, 
+                                     status = 'matched', 
+                                     match_source = $2,
+                                     processed_at = NOW() 
+                                 WHERE id = $3`,
+                                [matchedSku, matchSource, row.id]
+                            );
 
-                        autoMatched++;
+                            autoMatched++;
+                        }
                     }
                 }
 
@@ -1322,14 +1360,24 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
             // ML: relacionar automaticamente via aliases
             console.log('📦 Relacionando ML - client_id:', client_id, 'source:', source);
 
+            // 🔧 Normalizar client_id (aceita nome ou ID)
+            let clientIdNum: number | null = null;
+            if (client_id) {
+                clientIdNum = await normalizeClientId(client_id);
+                if (!clientIdNum) {
+                    return res.status(400).json({ error: `Cliente "${client_id}" não encontrado` });
+                }
+                console.log(`✅ Cliente normalizado para ID: ${clientIdNum}`);
+            }
+
             // Buscar todos os itens pendentes (filtrado por cliente se fornecido)
             let query = `SELECT id, sku_text, client_id
                          FROM raw_export_orders
                          WHERE status = 'pending'`;
             const params: any[] = [];
 
-            if (client_id) {
-                params.push(client_id);
+            if (clientIdNum) {
+                params.push(clientIdNum);
                 query += ` AND client_id = $${params.length}`;
             }
 
@@ -1451,6 +1499,11 @@ enviosRouter.post('/relacionar-manual', async (req: Request, res: Response) => {
     try {
         const { raw_id, stock_sku, client_id, learn = true } = req.body;
 
+        // 🔧 Normalizar client_id (aceita nome ou ID)
+        const clientIdNum = await normalizeClientId(client_id);
+        if (!clientIdNum) {
+            return res.status(400).json({ error: `Cliente "${client_id}" não encontrado` });
+        }
 
         // Buscar dados da linha bruta
         const rawResult = await pool.query(
@@ -1482,7 +1535,7 @@ enviosRouter.post('/relacionar-manual', async (req: Request, res: Response) => {
                  WHERE client_id = $1 
                    AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
                        UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))`,
-                [client_id, rawData.sku_texto]
+                [clientIdNum, rawData.sku_texto]
             );
 
             if (existingAlias.rows.length === 0) {
@@ -1492,7 +1545,7 @@ enviosRouter.post('/relacionar-manual', async (req: Request, res: Response) => {
                         `INSERT INTO obsidian.sku_aliases 
                          (client_id, alias_text, stock_sku, confidence_default, times_used) 
                          VALUES ($1, $2, $3, 0.95, 1)`,
-                        [client_id, rawData.sku_texto, stock_sku]
+                        [clientIdNum, rawData.sku_texto, stock_sku]
                     );
                 } catch (insertError: any) {
                     if (insertError.code === '23505') {
@@ -1502,7 +1555,7 @@ enviosRouter.post('/relacionar-manual', async (req: Request, res: Response) => {
                              WHERE client_id = $1 
                                AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
                                    UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))`,
-                            [client_id, rawData.sku_texto]
+                            [clientIdNum, rawData.sku_texto]
                         );
                         if (retryAlias.rows.length > 0) {
                             await pool.query(
@@ -1800,13 +1853,10 @@ enviosRouter.post('/auto-relate', async (req: Request, res: Response) => {
             const params: any[] = [];
 
             if (client_id) {
-                const clientIdNum = parseInt(client_id as string);
-                if (!isNaN(clientIdNum)) {
+                const clientIdNum = await normalizeClientId(client_id);
+                if (clientIdNum) {
                     params.push(clientIdNum);
                     whereClause += ` AND client_id = $${params.length}`;
-                } else {
-                    params.push(client_id);
-                    whereClause += ` AND client_id = (SELECT id FROM obsidian.clientes WHERE UPPER(nome) = UPPER($${params.length}) LIMIT 1)`;
                 }
             }
 
@@ -2026,22 +2076,8 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
             // Se não tiver import_id, pegar o mais recente do cliente
             let finalImportId = import_id;
             if (!import_id && client_id) {
-                // Resolver client_id (pode ser número ou nome)
-                let resolvedClientId = null;
-                const clientIdNum = parseInt(client_id as string);
-
-                if (!isNaN(clientIdNum)) {
-                    resolvedClientId = clientIdNum;
-                } else {
-                    // Buscar ID pelo nome
-                    const clientResult = await pool.query(
-                        `SELECT id FROM obsidian.clientes WHERE UPPER(nome) = UPPER($1) LIMIT 1`,
-                        [client_id]
-                    );
-                    if (clientResult.rows.length > 0) {
-                        resolvedClientId = clientResult.rows[0].id;
-                    }
-                }
+                // 🔧 Normalizar client_id
+                const resolvedClientId = await normalizeClientId(client_id);
 
                 // Buscar import_id mais recente desse cliente
                 if (resolvedClientId) {
@@ -2061,13 +2097,10 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
             }
 
             if (client_id) {
-                const clientIdNum = parseInt(client_id as string);
-                if (!isNaN(clientIdNum)) {
+                const clientIdNum = await normalizeClientId(client_id);
+                if (clientIdNum) {
                     params.push(clientIdNum);
                     whereClause += ` AND client_id = $${params.length}`;
-                } else {
-                    params.push(client_id);
-                    whereClause += ` AND client_id = (SELECT id FROM obsidian.clientes WHERE UPPER(nome) = UPPER($${params.length}) LIMIT 1)`;
                 }
             }
 
