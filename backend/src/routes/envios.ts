@@ -827,12 +827,23 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 }
             }
 
+            // Deduplicar dados antes de inserir (evitar "cannot affect row a second time")
+            console.log(`🔍 Deduplicando ${valuesToInsert.length} linhas...`);
+            const uniqueMap = new Map();
+            for (const row of valuesToInsert) {
+                // Chave única: client_id + Nº Pedido + sku_text + qty + unit_price
+                const key = `${row[11]}_${row[0]}_${row[17]}_${row[18]}_${row[19]}`;
+                uniqueMap.set(key, row); // Se duplicado, mantém o último
+            }
+            const uniqueValues = Array.from(uniqueMap.values());
+            console.log(`✅ ${uniqueValues.length} linhas únicas (${valuesToInsert.length - uniqueValues.length} duplicatas removidas)`);
+
             // BULK INSERT em lotes de 500 linhas
             const BATCH_SIZE = 500;
-            console.log(`📦 Inserindo ${valuesToInsert.length} linhas em lotes de ${BATCH_SIZE}...`);
+            console.log(`📦 Inserindo ${uniqueValues.length} linhas em lotes de ${BATCH_SIZE}...`);
 
-            for (let i = 0; i < valuesToInsert.length; i += BATCH_SIZE) {
-                const batch = valuesToInsert.slice(i, i + BATCH_SIZE);
+            for (let i = 0; i < uniqueValues.length; i += BATCH_SIZE) {
+                const batch = uniqueValues.slice(i, i + BATCH_SIZE);
 
                 // Construir placeholders ($1, $2, ..., $24)
                 const placeholders = batch.map((_, idx) => {
@@ -871,9 +882,8 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                             status,
                             created_at
                         ) VALUES ${placeholders}
-                        ON CONFLICT (order_id, sku_text) 
+                        ON CONFLICT (client_id, "Nº de Pedido da Plataforma", sku_text, qty, unit_price) 
                         DO UPDATE SET
-                            "Nº de Pedido da Plataforma" = EXCLUDED."Nº de Pedido da Plataforma",
                             "Nº de Pedido" = EXCLUDED."Nº de Pedido",
                             "Plataformas" = EXCLUDED."Plataformas",
                             "Nome da Loja no UpSeller" = EXCLUDED."Nome da Loja no UpSeller",
@@ -884,16 +894,14 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                             "Qtd. do Produto" = EXCLUDED."Qtd. do Produto",
                             "Preço de Produto" = EXCLUDED."Preço de Produto",
                             "Nome de Comprador" = EXCLUDED."Nome de Comprador",
-                            qty = EXCLUDED.qty,
-                            unit_price = EXCLUDED.unit_price,
-                            total = EXCLUDED.total,
                             customer = EXCLUDED.customer,
                             channel = EXCLUDED.channel,
                             order_date = EXCLUDED.order_date,
+                            order_id = EXCLUDED.order_id,
+                            total = EXCLUDED.total,
                             import_id = EXCLUDED.import_id,
                             original_filename = EXCLUDED.original_filename,
-                            row_num = EXCLUDED.row_num,
-                            updated_at = NOW()`,
+                            row_num = EXCLUDED.row_num`,
                         flatValues
                     );
                     insertedRows += batch.length;
