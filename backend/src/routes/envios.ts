@@ -551,14 +551,13 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     let matchedSku: string | null = null;
                     let matchSource: string = '';
 
-                    // 1️⃣ PRIMEIRO: Buscar SKU exato na tabela produtos (igual n8n)
+                    // 1️⃣ PRIMEIRO: Buscar SKU exato na tabela produtos
                     const produtoResult = await pool.query(
                         `SELECT sku 
                          FROM obsidian.produtos 
-                         WHERE client_id = $1 
-                           AND UPPER(sku) = UPPER(TRIM($2))
+                         WHERE UPPER(sku) = UPPER(TRIM($1))
                          LIMIT 1`,
-                        [clientIdNum, row.sku_texto]
+                        [row.sku_texto]
                     );
 
                     if (produtoResult.rows.length > 0) {
@@ -827,6 +826,96 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
             console.log(`✅ ${insertedRows} linhas inseridas em raw_export_orders`);
 
+            // AUTO-RELACIONAR com aliases aprendidos (igual ao FULL)
+            let autoMatched = 0;
+
+            if (insertedRows > 0) {
+                console.log(`🔄 Iniciando auto-relacionamento...`);
+
+                // Buscar todas as linhas recém-inseridas
+                const pendingRows = await pool.query(
+                    `SELECT id, sku_text 
+                     FROM raw_export_orders 
+                     WHERE import_id = $1 AND status = 'pending'`,
+                    [batchId]
+                );
+
+                console.log(`📦 Processando ${pendingRows.rows.length} linhas para auto-relacionamento...`);
+
+                for (const row of pendingRows.rows) {
+                    let matchedSku: string | null = null;
+                    let matchSource: string = '';
+
+                    // 1️⃣ PRIMEIRO: Buscar SKU exato na tabela produtos
+                    const produtoResult = await pool.query(
+                        `SELECT sku 
+                         FROM obsidian.produtos 
+                         WHERE UPPER(sku) = UPPER(TRIM($1))
+                         LIMIT 1`,
+                        [row.sku_text]
+                    );
+
+                    if (produtoResult.rows.length > 0) {
+                        matchedSku = produtoResult.rows[0].sku;
+                        matchSource = 'produto_exato';
+                    } else {
+                        // 2️⃣ SEGUNDO: Buscar em aliases com normalização
+                        const aliasResult = await pool.query(
+                            `SELECT stock_sku, confidence_default, id 
+                             FROM obsidian.sku_aliases 
+                             WHERE client_id = $1 
+                               AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                   UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
+                             ORDER BY confidence_default DESC, times_used DESC 
+                             LIMIT 1`,
+                            [clientIdNum, row.sku_text]
+                        );
+
+                        if (aliasResult.rows.length > 0) {
+                            matchedSku = aliasResult.rows[0].stock_sku;
+                            matchSource = 'alias';
+
+                            // Atualizar contador de uso do alias
+                            await pool.query(
+                                `UPDATE obsidian.sku_aliases 
+                                 SET times_used = times_used + 1, 
+                                     last_used_at = NOW() 
+                                 WHERE id = $1`,
+                                [aliasResult.rows[0].id]
+                            );
+                        }
+                    }
+
+                    // Se encontrou match, relacionar
+                    if (matchedSku) {
+                        await pool.query(
+                            `UPDATE raw_export_orders 
+                             SET matched_sku = $1, 
+                                 status = 'matched', 
+                                 match_source = $2,
+                                 processed_at = NOW() 
+                             WHERE id = $3`,
+                            [matchedSku, matchSource, row.id]
+                        );
+
+                        autoMatched++;
+                    }
+                }
+
+                console.log(`✅ Auto-relacionamento concluído: ${autoMatched} itens relacionados`);
+            }
+
+            // Contar pendentes restantes
+            const pendingCount = await pool.query(
+                `SELECT COUNT(*) as count 
+                 FROM raw_export_orders 
+                 WHERE import_id = $1 AND status = 'pending'`,
+                [batchId]
+            );
+            const remainingPending = parseInt(pendingCount.rows[0].count);
+
+            console.log(`📊 Resumo: ${autoMatched} matched, ${remainingPending} pendentes`);
+
             // Atualizar batch com dados processados
             await pool.query(
                 `UPDATE obsidian.import_batches 
@@ -865,8 +954,12 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 linhas: jsonData.length,
                 linhas_inseridas: insertedRows,
                 linhas_ignoradas: jsonData.length - insertedRows,
+                auto_relacionadas: autoMatched,
+                pendentes: remainingPending,
                 errors: errors.length > 0 ? errors : undefined,
-                message: `✅ ${insertedRows} linhas importadas com sucesso!`
+                message: remainingPending === 0
+                    ? '✅ Todos os itens foram relacionados automaticamente!'
+                    : `✅ ${insertedRows} linhas importadas. ${autoMatched} itens relacionados, ${remainingPending} aguardam relacionamento manual.`
             });
         }
 
