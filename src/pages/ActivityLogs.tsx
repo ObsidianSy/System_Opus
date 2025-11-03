@@ -97,6 +97,24 @@ const actionColors: Record<string, string> = {
     auto_relate: "bg-cyan-500",
 }
 
+// Função para formatar detalhes de forma legível
+const formatDetails = (details: Record<string, any>) => {
+    const items: { label: string; value: string | number }[] = []
+
+    if (details.envio_num) items.push({ label: "Nº Envio", value: details.envio_num })
+    if (details.client_name) items.push({ label: "Cliente", value: details.client_name })
+    if (details.filename) items.push({ label: "Arquivo", value: details.filename })
+    if (details.total_linhas) items.push({ label: "Total de Linhas", value: details.total_linhas })
+    if (details.auto_relacionadas !== undefined) items.push({ label: "Auto Relacionadas", value: details.auto_relacionadas })
+    if (details.pendentes !== undefined) items.push({ label: "Pendentes", value: details.pendentes })
+    if (details.total_vendas) items.push({ label: "Total de Vendas", value: details.total_vendas })
+    if (details.import_date) items.push({ label: "Data Importação", value: new Date(details.import_date).toLocaleDateString('pt-BR') })
+    if (details.relacionadas) items.push({ label: "Relacionadas", value: details.relacionadas })
+    if (details.success !== undefined) items.push({ label: "Status", value: details.success ? "✅ Sucesso" : "❌ Falha" })
+
+    return items
+}
+
 export default function ActivityLogs() {
     const [filters, setFilters] = useState({
         action: "all",
@@ -325,9 +343,18 @@ export default function ActivityLogs() {
                                                             <summary className="text-sm text-blue-600 hover:underline">
                                                                 Ver detalhes
                                                             </summary>
-                                                            <pre className="mt-2 max-w-md overflow-auto rounded bg-muted p-2 text-xs">
-                                                                {JSON.stringify(log.details, null, 2)}
-                                                            </pre>
+                                                            <div className="mt-2 space-y-1 rounded border bg-muted/50 p-3 text-sm">
+                                                                {formatDetails(log.details).map((item, idx) => (
+                                                                    <div key={idx} className="flex justify-between gap-4">
+                                                                        <span className="font-medium text-muted-foreground">
+                                                                            {item.label}:
+                                                                        </span>
+                                                                        <span className="font-semibold">
+                                                                            {item.value}
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
                                                         </details>
                                                     )}
                                                 </TableCell>
