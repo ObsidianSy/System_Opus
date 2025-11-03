@@ -32,12 +32,21 @@ const toNum = (v: unknown, d = 0) =>
 
 export const importService = {
   // Upload planilha (ML ou FULL)
-  async uploadFile(clientId: string, file: File, source: 'ML' | 'FULL' = 'ML'): Promise<ImportResponse> {
+  async uploadFile(clientId: string, file: File, source: 'ML' | 'FULL' = 'ML', importDate?: Date, userEmail?: string, userName?: string): Promise<ImportResponse> {
     const formData = new FormData();
     formData.append('client_id', clientId);
     formData.append('file', file);
     formData.append('filename', file.name);
     formData.append('source', source);
+    if (importDate) {
+      formData.append('import_date', importDate.toISOString());
+    }
+    if (userEmail) {
+      formData.append('user_email', userEmail);
+    }
+    if (userName) {
+      formData.append('user_name', userName);
+    }
 
     try {
       const response = await fetch(IMPORT_WEBHOOK_URL, {
@@ -648,7 +657,7 @@ export const importService = {
 
   // ===== FUNÇÕES PARA IMPORT FULL (com envio_num) =====
 
-  async uploadFileFull(cliente: string, envioNum: string, file: File): Promise<{
+  async uploadFileFull(cliente: string, envioNum: string, file: File, importDate?: string, userEmail?: string, userName?: string): Promise<{
     envio_id: number;
     envio_num: string;
     linhas: number;
@@ -661,6 +670,15 @@ export const importService = {
     formData.append('client_id', cliente);
     formData.append('envio_num', envioNum);
     formData.append('source', 'FULL');
+    if (importDate) {
+      formData.append('import_date', importDate);
+    }
+    if (userEmail) {
+      formData.append('user_email', userEmail);
+    }
+    if (userName) {
+      formData.append('user_name', userName);
+    }
 
     const response = await fetch('/api/envios', {
       method: 'POST',

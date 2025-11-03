@@ -1,14 +1,20 @@
 import { useState, memo } from 'react';
-import { Upload, FileSpreadsheet, AlertCircle, Package, CheckCircle2 } from 'lucide-react';
+import { Upload, FileSpreadsheet, AlertCircle, Package, CheckCircle2, CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { importService } from '@/services/importService';
 import { useApiData } from '@/hooks/useApiData';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ImportTabFullProps {
   onUploadSuccess?: (data: { envioNum: string; clienteNome: string; pendentes: number }) => void;
@@ -22,8 +28,10 @@ interface UploadResult {
 }
 
 export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: ImportTabFullProps) {
+  const { usuario } = useAuth();
   const [selectedClient, setSelectedClient] = useState<string>('');
   const [envioNum, setEnvioNum] = useState<string>('');
+  const [importDate, setImportDate] = useState<Date | undefined>(new Date());
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -53,10 +61,10 @@ export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: Im
   };
 
   const handleUpload = async () => {
-    if (!selectedClient || !envioNum || !selectedFile) {
+    if (!selectedClient || !envioNum || !selectedFile || !importDate) {
       toast({
         title: 'Campos obrigatórios',
-        description: 'Por favor, preencha cliente, nº envio e selecione um arquivo.',
+        description: 'Por favor, preencha cliente, nº envio, data e selecione um arquivo.',
         variant: 'destructive',
       });
       return;
@@ -73,7 +81,10 @@ export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: Im
       const response = await importService.uploadFileFull(
         selectedClient,
         envioNum,
-        selectedFile
+        selectedFile,
+        format(importDate, 'yyyy-MM-dd'),
+        usuario?.email,
+        usuario?.nome
       );
 
       clearInterval(progressInterval);
@@ -207,6 +218,40 @@ export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: Im
                 value={envioNum}
                 onChange={(e) => setEnvioNum(e.target.value)}
               />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1">
+                Data de Importação
+                <span className="text-destructive">*</span>
+              </label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !importDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {importDate ? (
+                      format(importDate, "PPP", { locale: ptBR })
+                    ) : (
+                      <span>Selecione uma data</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={importDate}
+                    onSelect={setImportDate}
+                    initialFocus
+                    locale={ptBR}
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-2">

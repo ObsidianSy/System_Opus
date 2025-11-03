@@ -4,6 +4,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import XLSX from 'xlsx';
+import { logActivity } from '../services/activityLogger';
 
 interface MulterRequest extends Request {
     file?: Express.Multer.File;
@@ -403,7 +404,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             return res.status(400).json({ error: 'Nenhum arquivo enviado' });
         }
 
-        const { client_id, source = 'ML', envio_num } = req.body;
+        const { client_id, source = 'ML', envio_num, import_date } = req.body;
         const filename = req.file.originalname || req.file.filename;
 
 
@@ -445,10 +446,10 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             // 1. CRIAR LOTE (import_batches) - ID único do upload
             const batchResult = await pool.query(
                 `INSERT INTO obsidian.import_batches 
-                 (filename, source, client_id, status, total_rows, started_at) 
-                 VALUES ($1, $2, $3, $4, $5, NOW()) 
+                 (filename, source, client_id, status, total_rows, started_at, import_date) 
+                 VALUES ($1, $2, $3, $4, $5, NOW(), $6) 
                  RETURNING *`,
-                [filename, source, clientIdNum, 'processing', jsonData.length]
+                [filename, source, clientIdNum, 'processing', jsonData.length, import_date || null]
             );
 
             const importId = batchResult.rows[0].import_id;
@@ -472,17 +473,18 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
             const envioResult = await pool.query(
                 `INSERT INTO logistica.full_envio 
-                 (client_id, envio_num, arquivo_nome, status, tot_itens, tot_qtd) 
-                 VALUES ($1, $2, $3, $4, $5, $6) 
+                 (client_id, envio_num, arquivo_nome, status, tot_itens, tot_qtd, import_date) 
+                 VALUES ($1, $2, $3, $4, $5, $6, $7) 
                  ON CONFLICT (client_id, envio_num) 
                  DO UPDATE SET 
                     arquivo_nome = EXCLUDED.arquivo_nome,
                     tot_itens = EXCLUDED.tot_itens,
                     tot_qtd = EXCLUDED.tot_qtd,
                     status = 'draft',
-                    created_at = NOW()
+                    created_at = NOW(),
+                    import_date = EXCLUDED.import_date
                  RETURNING id`,
-                [clientIdNum, envioNumValue, filename, 'draft', jsonData.length, totalQtd]
+                [clientIdNum, envioNumValue, filename, 'draft', jsonData.length, totalQtd, import_date || null]
             );
 
             const envioId = envioResult.rows[0].id;
@@ -637,6 +639,25 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 [envioStatus, envioId]
             );
 
+            // Registrar log de atividade
+            await logActivity({
+                user_email: req.body.user_email || 'sistema',
+                user_name: req.body.user_name || 'Sistema',
+                action: 'upload_full',
+                entity_type: 'envio',
+                entity_id: envioId.toString(),
+                details: {
+                    envio_num: envioNumValue,
+                    filename,
+                    total_linhas: jsonData.length,
+                    auto_relacionadas: autoMatched,
+                    pendentes: remainingPending,
+                    client_id: clientIdNum
+                },
+                ip_address: req.ip,
+                user_agent: req.get('user-agent')
+            });
+
             res.json({
                 success: true,
                 import_id: importId,
@@ -670,6 +691,23 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                  WHERE import_id = $2`,
                 [processedRows, batchId]
             );
+
+            // Registrar log de atividade
+            await logActivity({
+                user_email: req.body.user_email || 'sistema',
+                user_name: req.body.user_name || 'Sistema',
+                action: 'upload_ml',
+                entity_type: 'import_batch',
+                entity_id: batchId,
+                details: {
+                    filename,
+                    total_rows: jsonData.length,
+                    client_id: clientIdNum,
+                    envio_num: envio_num || batchId
+                },
+                ip_address: req.ip,
+                user_agent: req.get('user-agent')
+            });
 
             res.json({
                 success: true,
@@ -1081,6 +1119,24 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
 
             console.log(`✅ ML Relacionados: ${matched} | Pendentes: ${notMatched}`);
 
+            // Registrar log de atividade
+            await logActivity({
+                user_email: req.body.user_email || 'sistema',
+                user_name: req.body.user_name || 'Sistema',
+                action: 'auto_relate',
+                entity_type: source === 'FULL' ? 'envio' : 'pedidos',
+                entity_id: source === 'FULL' ? envio_id : (client_id || 'all'),
+                details: {
+                    source,
+                    total: pendingItems.rows.length,
+                    matched,
+                    not_matched: notMatched,
+                    taxa_match: pendingItems.rows.length > 0 ? (matched / pendingItems.rows.length) * 100 : 0
+                },
+                ip_address: req.ip,
+                user_agent: req.get('user-agent')
+            });
+
             res.json({
                 success: true,
                 message: 'Auto-relacionamento ML concluído',
@@ -1285,6 +1341,24 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
             );
         }
 
+        // Registrar log de atividade
+        await logActivity({
+            user_email: req.body.user_email || 'sistema',
+            user_name: req.body.user_name || 'Sistema',
+            action: 'relate_item',
+            entity_type: 'full_raw',
+            entity_id: raw_id.toString(),
+            details: {
+                matched_sku,
+                alias_created: aliasOps > 0,
+                alias_text,
+                envio_id: envioId,
+                source: 'FULL'
+            },
+            ip_address: req.ip,
+            user_agent: req.get('user-agent')
+        });
+
         res.json({
             envio_id: envioId,
             alias_ops: aliasOps,
@@ -1467,13 +1541,15 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
             // Nota: Emite apenas os itens já relacionados, ignora pendentes
             const itemsResult = await pool.query(
                 `SELECT 
+                    id,
                     sku,
-                    SUM(qtd) as quantidade,
-                    AVG(preco_unit_interno) as preco_unitario
+                    qtd as quantidade,
+                    preco_unit_interno as preco_unitario,
+                    codigo_ml,
+                    envio_id
                  FROM logistica.full_envio_item 
                  WHERE envio_id = $1
-                 GROUP BY sku
-                 ORDER BY sku`,
+                 ORDER BY id`,
                 [envio_id]
             );
 
@@ -1483,28 +1559,77 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                 });
             }
 
-            // Montar JSON de itens no formato esperado pela função processar_pedido
-            const items = itemsResult.rows.map(item => ({
-                sku: item.sku,
-                nome_produto: item.sku, // Função vai buscar ou usar default
-                quantidade: parseFloat(item.quantidade),
-                preco_unitario: parseFloat(item.preco_unitario || 0)
-            }));
+            // Montar JSON de itens com ext_id único
+            const items = itemsResult.rows.map((item) => {
+                // Gerar ext_id: FULL:{item_id}:{envio_id}:{codigo_ml}:{sku}:{qtd}
+                // Usa o ID da tabela (único e permanente)
+                const ext_id = `FULL:${item.id}:${envio_id}:${item.codigo_ml || ''}:${item.sku}:${parseFloat(item.quantidade)}`;
 
+                return {
+                    sku: item.sku,
+                    nome_produto: item.sku,
+                    quantidade: parseFloat(item.quantidade),
+                    preco_unitario: parseFloat(item.preco_unitario || 0),
+                    ext_id: ext_id
+                };
+            });
 
             // Gerar pedido_uid único baseado no envio
             const pedido_uid = `FULL-${envio.envio_num}-${envio.id}`;
             const data_venda = envio.created_at ? new Date(envio.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
             const canal = 'FULL';
 
-            // Chamar função processar_pedido do banco
-            const processResult = await pool.query(
-                `SELECT * FROM obsidian.processar_pedido($1, $2, $3, $4, $5::jsonb)`,
-                [pedido_uid, data_venda, envio.cliente_nome, canal, JSON.stringify(items)]
-            );
+            // Inserir vendas diretamente (sem função do banco)
+            let inseridos = 0;
+            let ja_existiam = 0;
 
-            processResult.rows.forEach(row => {
-            });
+            for (const item of items) {
+                try {
+                    // Verificar se já existe (evitar duplicação)
+                    const existingCheck = await pool.query(
+                        `SELECT id FROM obsidian.vendas WHERE pedido_uid = $1 AND ext_id = $2`,
+                        [pedido_uid, item.ext_id]
+                    );
+
+                    if (existingCheck.rows.length > 0) {
+                        ja_existiam++;
+                        continue;
+                    }
+
+                    // Inserir venda
+                    await pool.query(
+                        `INSERT INTO obsidian.vendas (
+                            data_venda, 
+                            nome_cliente, 
+                            sku_produto, 
+                            quantidade_vendida, 
+                            preco_unitario, 
+                            valor_total,
+                            nome_produto,
+                            canal,
+                            pedido_uid,
+                            ext_id
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                        [
+                            data_venda,
+                            envio.cliente_nome,
+                            item.sku,
+                            item.quantidade,
+                            item.preco_unitario,
+                            item.quantidade * item.preco_unitario,
+                            item.nome_produto || item.sku,
+                            canal,
+                            pedido_uid,
+                            item.ext_id
+                        ]
+                    );
+
+                    inseridos++;
+                } catch (error: any) {
+                    console.error(`Erro ao inserir item ${item.sku}:`, error.message);
+                }
+            }
 
             // Atualizar status do envio
             await pool.query(
@@ -1515,12 +1640,32 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                 [envio_id]
             );
 
+            // Registrar log de atividade
+            await logActivity({
+                user_email: req.body.user_email || 'sistema',
+                user_name: req.body.user_name || 'Sistema',
+                action: 'emit_sales',
+                entity_type: 'envio',
+                entity_id: envio_id.toString(),
+                details: {
+                    source: 'FULL',
+                    pedido_uid,
+                    total_items: items.length,
+                    inseridos,
+                    ja_existiam,
+                    cliente: envio.cliente_nome
+                },
+                ip_address: req.ip,
+                user_agent: req.get('user-agent')
+            });
+
             res.json({
                 success: true,
                 message: 'Vendas emitidas com sucesso',
                 pedido_uid,
-                items_count: processResult.rows.length,
-                items_processados: processResult.rows
+                items_count: items.length,
+                inseridos,
+                ja_existiam
             });
         } else if (source === 'ML') {
             // ML: Processar vendas do Mercado Livre
@@ -1689,6 +1834,25 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                 }
             }
 
+
+            // Registrar log de atividade
+            await logActivity({
+                user_email: req.body.user_email || 'sistema',
+                user_name: req.body.user_name || 'Sistema',
+                action: 'emit_sales',
+                entity_type: 'pedidos',
+                entity_id: finalImportId || client_id,
+                details: {
+                    source: 'ML',
+                    candidatos: ordersResult.rows.length,
+                    inseridos,
+                    ja_existiam,
+                    full_skipped,
+                    client_id
+                },
+                ip_address: req.ip,
+                user_agent: req.get('user-agent')
+            });
 
             res.json([{
                 candidatos: ordersResult.rows.length,

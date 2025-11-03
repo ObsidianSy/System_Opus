@@ -23,6 +23,7 @@ import ReceitaProduto from "./pages/ReceitaProduto";
 import ImportPlanilha from "./pages/ImportPlanilha";
 import ImportPlanilhaFull from "./pages/ImportPlanilhaFull";
 import FullEnvios from "./pages/FullEnvios";
+import ActivityLogs from "./pages/ActivityLogs";
 import Login from "./pages/Login";
 
 const queryClient = new QueryClient({
@@ -76,6 +77,7 @@ const App = () => (
                   <Route path="/import-planilha" element={<PrivateRoute><ImportPlanilha /></PrivateRoute>} />
                   <Route path="/import-planilha-full" element={<PrivateRoute><ImportPlanilhaFull /></PrivateRoute>} />
                   <Route path="/full-envios" element={<PrivateRoute><FullEnvios /></PrivateRoute>} />
+                  <Route path="/activity-logs" element={<PrivateRoute><ActivityLogs /></PrivateRoute>} />
 
                   {/* Rota 404 */}
                   <Route path="*" element={<NotFound />} />

@@ -11,6 +11,7 @@ import { estoqueRouter } from './routes/estoque';
 import { materiaPrimaRouter } from './routes/materiaPrima';
 import { receitaProdutoRouter } from './routes/receitaProduto';
 import { enviosRouter } from './routes/envios';
+import { activityRouter } from './routes/activity';
 import authRouter from './routes/auth';
 
 // Carrega variáveis de ambiente
@@ -79,6 +80,7 @@ app.use('/api/estoque', estoqueRouter);
 app.use('/api/materia-prima', materiaPrimaRouter);
 app.use('/api/receita-produto', receitaProdutoRouter);
 app.use('/api/envios', enviosRouter);
+app.use('/api/activity', activityRouter);
 
 // Serve arquivos estáticos do frontend (se existir pasta public)
 const publicPath = path.join(__dirname, '..', 'public');

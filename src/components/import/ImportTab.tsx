@@ -8,7 +8,14 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { importService } from '@/services/importService';
 import { useApiData } from '@/hooks/useApiData';
+import { useAuth } from '@/contexts/AuthContext';
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { CalendarIcon } from "lucide-react";
 export const ImportTab = memo(function ImportTab() {
+  const { usuario } = useAuth();
   const [selectedClient, setSelectedClient] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -25,14 +32,6 @@ export const ImportTab = memo(function ImportTab() {
     const file = event.target.files?.[0];
     if (file) {
       const validTypes = ['text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
-      if (!validTypes.includes(file.type)) {
-        toast({
-          title: 'Arquivo inválido',
-          description: 'Por favor, selecione um arquivo CSV ou Excel.',
-          variant: 'destructive'
-        });
-        return;
-      }
       setSelectedFile(file);
     }
   };
@@ -52,7 +51,14 @@ export const ImportTab = memo(function ImportTab() {
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => Math.min(prev + 10, 90));
       }, 200);
-      const response = await importService.uploadFile(selectedClient, selectedFile, 'ML');
+      const response = await importService.uploadFile(
+        selectedClient,
+        selectedFile,
+        'ML',
+        undefined,
+        usuario?.email,
+        usuario?.nome
+      );
       clearInterval(progressInterval);
       setUploadProgress(100);
       setImportId(response.import_id);

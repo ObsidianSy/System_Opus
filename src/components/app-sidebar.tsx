@@ -11,7 +11,8 @@ import {
   ChevronsUpDown,
   User2,
   Truck,
-  LogOut
+  LogOut,
+  Activity
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 
@@ -93,6 +94,11 @@ const data = {
       title: "FULL Envios",
       url: "/full-envios",
       icon: Truck,
+    },
+    {
+      title: "Logs de Atividade",
+      url: "/activity-logs",
+      icon: Activity,
     },
   ],
 }
