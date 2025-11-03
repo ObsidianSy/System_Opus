@@ -29,12 +29,12 @@ async function normalizeClientId(clientIdInput: any): Promise<number | null> {
             `SELECT id FROM obsidian.clientes WHERE UPPER(nome) ILIKE UPPER($1) LIMIT 1`,
             [clientIdInput]
         );
-
+        
         if (result.rows.length === 0) {
             console.warn(`⚠️ Cliente "${clientIdInput}" não encontrado no banco`);
             return null;
         }
-
+        
         return result.rows[0].id;
     } catch (error) {
         console.error('❌ Erro ao normalizar client_id:', error);
@@ -42,7 +42,36 @@ async function normalizeClientId(clientIdInput: any): Promise<number | null> {
     }
 }
 
-// GET - Buscar detalhes de um envio específico com suas linhas
+// 🔧 Helper: Converter data do Excel para timestamp válido
+function parseExcelDate(dateValue: any): Date | null {
+    if (!dateValue) return null;
+
+    try {
+        // Se já é Date, retornar
+        if (dateValue instanceof Date) {
+            return isNaN(dateValue.getTime()) ? null : dateValue;
+        }
+
+        // Se é número (serial date do Excel)
+        if (typeof dateValue === 'number') {
+            // Excel dates são dias desde 1/1/1900 (com bug do 1900)
+            const excelEpoch = new Date(1899, 11, 30);
+            const date = new Date(excelEpoch.getTime() + dateValue * 86400000);
+            return isNaN(date.getTime()) ? null : date;
+        }
+
+        // Se é string, tentar parsear
+        if (typeof dateValue === 'string') {
+            const parsed = new Date(dateValue);
+            return isNaN(parsed.getTime()) ? null : parsed;
+        }
+
+        return null;
+    } catch (error) {
+        console.warn(`⚠️ Erro ao parsear data: ${dateValue}`);
+        return null;
+    }
+}// GET - Buscar detalhes de um envio específico com suas linhas
 // Parâmetros: envio_id
 enviosRouter.get('/:envio_id/detalhes', async (req: Request, res: Response) => {
     try {
@@ -753,7 +782,8 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     // Extrair campos principais do Excel UpSeller
                     const orderIdPlatform = row['Nº de Pedido da Plataforma'] || '';
                     const orderIdInternal = row['Nº de Pedido'] || '';
-                    const orderDate = row['Hora do Pedido'] || row['Hora do Pagamento'] || null;
+                    const orderDateRaw = row['Hora do Pedido'] || row['Hora do Pagamento'] || null;
+                    const orderDate = parseExcelDate(orderDateRaw);
                     const sku = row['SKU'] || '';
                     const qty = parseFloat(row['Qtd. do Produto'] || 0);
                     const unitPrice = parseFloat(row['Preço de Produto'] || 0);
@@ -782,7 +812,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                         filename,
                         i + 1,
                         orderIdPlatform || orderIdInternal,
-                        orderDate ? new Date(orderDate) : null,
+                        orderDate, // Já é Date | null (não precisa new Date())
                         sku,
                         qty,
                         unitPrice,
