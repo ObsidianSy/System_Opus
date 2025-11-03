@@ -15,7 +15,7 @@ async function analyzeMatching() {
         `);
 
         console.log(`📦 ${pending.rows.length} SKUs pendentes (sem CMS):\n`);
-        
+
         for (const row of pending.rows) {
             const sku = row.sku_text;
             console.log(`\n🔹 SKU: ${sku}`);
