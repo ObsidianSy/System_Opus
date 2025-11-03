@@ -850,30 +850,89 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     }
 
                     valuesToInsert.push([
-                        orderIdPlatform,
-                        orderIdInternal,
-                        row['Plataformas'],
-                        row['Nome da Loja no UpSeller'],
-                        row['Estado do Pedido'],
-                        row['Hora do Pedido'],
-                        row['Hora do Pagamento'],
-                        sku,
-                        qty,
-                        unitPrice,
-                        customer,
-                        clientIdNum,
-                        batchId,
-                        filename,
-                        i + 1,
-                        orderIdPlatform || orderIdInternal,
-                        orderDate, // Já é Date | null (não precisa new Date())
-                        sku,
-                        qty,
-                        unitPrice,
-                        unitPrice * qty,
-                        customer,
-                        channel,
-                        'pending'
+                        // Campos originais do Excel (1-67)
+                        orderIdPlatform,                               // 1. Nº de Pedido da Plataforma
+                        orderIdInternal,                               // 2. Nº de Pedido
+                        row['Plataformas'],                           // 3. Plataformas
+                        row['Nome da Loja no UpSeller'],              // 4. Nome da Loja no UpSeller
+                        row['Estado do Pedido'],                      // 5. Estado do Pedido
+                        row['3PL Status'],                            // 6. 3PL Status
+                        row['Hora do Pedido'],                        // 7. Hora do Pedido
+                        row['Hora do Pagamento'],                     // 8. Hora do Pagamento
+                        row['Horário Programado'],                    // 9. Horário Programado
+                        row['Impressão da Etiqueta'],                 // 10. Impressão da Etiqueta
+                        row['Enviado'],                               // 11. Enviado
+                        row['Horário de Saída'],                      // 12. Horário de Saída
+                        row['Horário da Retirada'],                   // 13. Horário da Retirada
+                        row['Hora de Envio'],                         // 14. Hora de Envio
+                        row['Pago'],                                  // 15. Pago
+                        row['Moeda'],                                 // 16. Moeda
+                        row['Valor do Pedido'],                       // 17. Valor do Pedido
+                        row['Valor Total de Produtos'],               // 18. Valor Total de Produtos
+                        row['Descontos e Cupons'],                    // 19. Descontos e Cupons
+                        row['Comissão Total'],                        // 20. Comissão Total
+                        row['Frete do Comprador'],                    // 21. Frete do Comprador
+                        row['Total de Frete'],                        // 22. Total de Frete
+                        row['Lucro Estimado'],                        // 23. Lucro Estimado
+                        row['Notas do Comprador'],                    // 24. Notas do Comprador
+                        row['Observações'],                           // 25. Observações
+                        row['Pós-venda/Cancelado/Devolvido'],        // 26. Pós-venda/Cancelado/Devolvido
+                        row['Cancelado por'],                         // 27. Cancelado por
+                        row['Razão do Cancelamento'],                 // 28. Razão do Cancelamento
+                        row['Nome do Anúncio'],                       // 29. Nome do Anúncio
+                        sku,                                          // 30. SKU
+                        row['Variação'],                              // 31. Variação
+                        row['Link da Imagem'],                        // 32. Link da Imagem
+                        unitPrice,                                    // 33. Preço de Produto
+                        qty,                                          // 34. Qtd. do Produto
+                        row['NCM*'],                                  // 35. NCM*
+                        row['Origem*'],                               // 36. Origem*
+                        row['Unidade*'],                              // 37. Unidade*
+                        row['Imposto*'],                              // 38. Imposto*
+                        row['SKU (Armazém)'],                         // 39. SKU (Armazém)
+                        row['Nome do Produto'],                       // 40. Nome do Produto
+                        row['Custo Médio'],                           // 41. Custo Médio
+                        row['Custo do Produto'],                      // 42. Custo do Produto
+                        row['Armazém'],                               // 43. Armazém
+                        customer,                                     // 44. Nome de Comprador
+                        row['ID do Comprador'],                       // 45. ID do Comprador
+                        row['Data de Registração'],                   // 46. Data de Registração
+                        row['ID da Taxa'],                            // 47. ID da Taxa
+                        row['Nome do Destinatário'],                  // 48. Nome do Destinatário
+                        row['Celular do Destinatário'],               // 49. Celular do Destinatário
+                        row['Telefone do Destinatário'],              // 50. Telefone do Destinatário
+                        row['Endereço do Destinatário'],              // 51. Endereço do Destinatário
+                        row['Nome de Empresa'],                       // 52. Nome de Empresa
+                        row['IE'],                                    // 53. IE
+                        row['Endereço 1'],                            // 54. Endereço 1
+                        row['Endereço 2'],                            // 55. Endereço 2
+                        row['Número'],                                // 56. Número
+                        row['Bairro'],                                // 57. Bairro
+                        row['Cidade'],                                // 58. Cidade
+                        row['Estado'],                                // 59. Estado
+                        row['CEP'],                                   // 60. CEP
+                        row['País/Região'],                           // 61. País/Região
+                        row['Comprador Designado'],                   // 62. Comprador Designado
+                        row['Método de Envio'],                       // 63. Método de Envio
+                        row['Nº de Rastreio'],                        // 64. Nº de Rastreio
+                        row['Método de coletar'],                     // 65. Método de coletar
+                        row['Etiqueta'],                              // 66. Etiqueta
+                        
+                        // Campos do sistema (67-85)
+                        clientIdNum,                                  // 67. client_id
+                        batchId,                                      // 68. import_id
+                        filename,                                     // 69. original_filename
+                        i + 1,                                        // 70. row_num
+                        orderIdPlatform || orderIdInternal,           // 71. order_id
+                        orderDate,                                    // 72. order_date
+                        sku,                                          // 73. sku_text
+                        qty,                                          // 74. qty
+                        unitPrice,                                    // 75. unit_price
+                        unitPrice * qty,                              // 76. total
+                        customer,                                     // 77. customer
+                        channel,                                      // 78. channel
+                        'pending'                                     // 79. status
+                        // matched_sku, match_score, match_source, error_msg, created_at, processed_at serão NULL ou DEFAULT
                     ]);
                 } catch (rowError: any) {
                     console.error(`Erro ao processar linha ${i + 1}:`, rowError.message);
@@ -886,7 +945,8 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             const uniqueMap = new Map();
             for (const row of valuesToInsert) {
                 // Chave única: client_id + Nº Pedido + sku_text + qty + unit_price
-                const key = `${row[11]}_${row[0]}_${row[17]}_${row[18]}_${row[19]}`;
+                // Índices: 66=client_id, 0=Nº Pedido Plataforma, 72=sku_text, 73=qty, 74=unit_price
+                const key = `${row[66]}_${row[0]}_${row[72]}_${row[73]}_${row[74]}`;
                 uniqueMap.set(key, row); // Se duplicado, mantém o último
             }
             const uniqueValues = Array.from(uniqueMap.values());
@@ -894,15 +954,17 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
             // BULK INSERT em lotes de 500 linhas
             const BATCH_SIZE = 500;
+            const NUM_FIELDS = 79; // Total de campos que estamos inserindo
             console.log(`📦 Inserindo ${uniqueValues.length} linhas em lotes de ${BATCH_SIZE}...`);
 
             for (let i = 0; i < uniqueValues.length; i += BATCH_SIZE) {
                 const batch = uniqueValues.slice(i, i + BATCH_SIZE);
 
-                // Construir placeholders ($1, $2, ..., $24)
+                // Construir placeholders dinamicamente para 79 campos
                 const placeholders = batch.map((_, idx) => {
-                    const offset = idx * 24;
-                    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, $${offset + 17}, $${offset + 18}, $${offset + 19}, $${offset + 20}, $${offset + 21}, $${offset + 22}, $${offset + 23}, $${offset + 24}, NOW())`;
+                    const offset = idx * NUM_FIELDS;
+                    const params = Array.from({ length: NUM_FIELDS }, (_, i) => `$${offset + i + 1}`).join(', ');
+                    return `(${params}, NOW())`; // +1 para created_at
                 }).join(',');
 
                 const flatValues = batch.flat();
@@ -915,12 +977,67 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                             "Plataformas",
                             "Nome da Loja no UpSeller",
                             "Estado do Pedido",
+                            "3PL Status",
                             "Hora do Pedido",
                             "Hora do Pagamento",
+                            "Horário Programado",
+                            "Impressão da Etiqueta",
+                            "Enviado",
+                            "Horário de Saída",
+                            "Horário da Retirada",
+                            "Hora de Envio",
+                            "Pago",
+                            "Moeda",
+                            "Valor do Pedido",
+                            "Valor Total de Produtos",
+                            "Descontos e Cupons",
+                            "Comissão Total",
+                            "Frete do Comprador",
+                            "Total de Frete",
+                            "Lucro Estimado",
+                            "Notas do Comprador",
+                            "Observações",
+                            "Pós-venda/Cancelado/Devolvido",
+                            "Cancelado por",
+                            "Razão do Cancelamento",
+                            "Nome do Anúncio",
                             "SKU",
-                            "Qtd. do Produto",
+                            "Variação",
+                            "Link da Imagem",
                             "Preço de Produto",
+                            "Qtd. do Produto",
+                            "NCM*",
+                            "Origem*",
+                            "Unidade*",
+                            "Imposto*",
+                            "SKU (Armazém)",
+                            "Nome do Produto",
+                            "Custo Médio",
+                            "Custo do Produto",
+                            "Armazém",
                             "Nome de Comprador",
+                            "ID do Comprador",
+                            "Data de Registração",
+                            "ID da Taxa",
+                            "Nome do Destinatário",
+                            "Celular do Destinatário",
+                            "Telefone do Destinatário",
+                            "Endereço do Destinatário",
+                            "Nome de Empresa",
+                            "IE",
+                            "Endereço 1",
+                            "Endereço 2",
+                            "Número",
+                            "Bairro",
+                            "Cidade",
+                            "Estado",
+                            "CEP",
+                            "País/Região",
+                            "Comprador Designado",
+                            "Método de Envio",
+                            "Nº de Rastreio",
+                            "Método de coletar",
+                            "Etiqueta",
                             client_id,
                             import_id,
                             original_filename,
@@ -942,12 +1059,67 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                             "Plataformas" = EXCLUDED."Plataformas",
                             "Nome da Loja no UpSeller" = EXCLUDED."Nome da Loja no UpSeller",
                             "Estado do Pedido" = EXCLUDED."Estado do Pedido",
+                            "3PL Status" = EXCLUDED."3PL Status",
                             "Hora do Pedido" = EXCLUDED."Hora do Pedido",
                             "Hora do Pagamento" = EXCLUDED."Hora do Pagamento",
+                            "Horário Programado" = EXCLUDED."Horário Programado",
+                            "Impressão da Etiqueta" = EXCLUDED."Impressão da Etiqueta",
+                            "Enviado" = EXCLUDED."Enviado",
+                            "Horário de Saída" = EXCLUDED."Horário de Saída",
+                            "Horário da Retirada" = EXCLUDED."Horário da Retirada",
+                            "Hora de Envio" = EXCLUDED."Hora de Envio",
+                            "Pago" = EXCLUDED."Pago",
+                            "Moeda" = EXCLUDED."Moeda",
+                            "Valor do Pedido" = EXCLUDED."Valor do Pedido",
+                            "Valor Total de Produtos" = EXCLUDED."Valor Total de Produtos",
+                            "Descontos e Cupons" = EXCLUDED."Descontos e Cupons",
+                            "Comissão Total" = EXCLUDED."Comissão Total",
+                            "Frete do Comprador" = EXCLUDED."Frete do Comprador",
+                            "Total de Frete" = EXCLUDED."Total de Frete",
+                            "Lucro Estimado" = EXCLUDED."Lucro Estimado",
+                            "Notas do Comprador" = EXCLUDED."Notas do Comprador",
+                            "Observações" = EXCLUDED."Observações",
+                            "Pós-venda/Cancelado/Devolvido" = EXCLUDED."Pós-venda/Cancelado/Devolvido",
+                            "Cancelado por" = EXCLUDED."Cancelado por",
+                            "Razão do Cancelamento" = EXCLUDED."Razão do Cancelamento",
+                            "Nome do Anúncio" = EXCLUDED."Nome do Anúncio",
                             "SKU" = EXCLUDED."SKU",
-                            "Qtd. do Produto" = EXCLUDED."Qtd. do Produto",
+                            "Variação" = EXCLUDED."Variação",
+                            "Link da Imagem" = EXCLUDED."Link da Imagem",
                             "Preço de Produto" = EXCLUDED."Preço de Produto",
+                            "Qtd. do Produto" = EXCLUDED."Qtd. do Produto",
+                            "NCM*" = EXCLUDED."NCM*",
+                            "Origem*" = EXCLUDED."Origem*",
+                            "Unidade*" = EXCLUDED."Unidade*",
+                            "Imposto*" = EXCLUDED."Imposto*",
+                            "SKU (Armazém)" = EXCLUDED."SKU (Armazém)",
+                            "Nome do Produto" = EXCLUDED."Nome do Produto",
+                            "Custo Médio" = EXCLUDED."Custo Médio",
+                            "Custo do Produto" = EXCLUDED."Custo do Produto",
+                            "Armazém" = EXCLUDED."Armazém",
                             "Nome de Comprador" = EXCLUDED."Nome de Comprador",
+                            "ID do Comprador" = EXCLUDED."ID do Comprador",
+                            "Data de Registração" = EXCLUDED."Data de Registração",
+                            "ID da Taxa" = EXCLUDED."ID da Taxa",
+                            "Nome do Destinatário" = EXCLUDED."Nome do Destinatário",
+                            "Celular do Destinatário" = EXCLUDED."Celular do Destinatário",
+                            "Telefone do Destinatário" = EXCLUDED."Telefone do Destinatário",
+                            "Endereço do Destinatário" = EXCLUDED."Endereço do Destinatário",
+                            "Nome de Empresa" = EXCLUDED."Nome de Empresa",
+                            "IE" = EXCLUDED."IE",
+                            "Endereço 1" = EXCLUDED."Endereço 1",
+                            "Endereço 2" = EXCLUDED."Endereço 2",
+                            "Número" = EXCLUDED."Número",
+                            "Bairro" = EXCLUDED."Bairro",
+                            "Cidade" = EXCLUDED."Cidade",
+                            "Estado" = EXCLUDED."Estado",
+                            "CEP" = EXCLUDED."CEP",
+                            "País/Região" = EXCLUDED."País/Região",
+                            "Comprador Designado" = EXCLUDED."Comprador Designado",
+                            "Método de Envio" = EXCLUDED."Método de Envio",
+                            "Nº de Rastreio" = EXCLUDED."Nº de Rastreio",
+                            "Método de coletar" = EXCLUDED."Método de coletar",
+                            "Etiqueta" = EXCLUDED."Etiqueta",
                             customer = EXCLUDED.customer,
                             channel = EXCLUDED.channel,
                             order_date = EXCLUDED.order_date,
@@ -956,7 +1128,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                             import_id = EXCLUDED.import_id,
                             original_filename = EXCLUDED.original_filename,
                             row_num = EXCLUDED.row_num,
-                            status = EXCLUDED.status,
+                            status = 'pending',
                             processed_at = NULL`,
                         flatValues
                     );
