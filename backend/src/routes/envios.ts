@@ -1323,9 +1323,9 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
             console.log('📦 Relacionando ML - client_id:', client_id, 'source:', source);
 
             // Buscar todos os itens pendentes (filtrado por cliente se fornecido)
-            let query = `SELECT id, order_id as codigo_ml, sku_text as sku_original, client_id
+            let query = `SELECT id, sku_text, client_id
                          FROM raw_export_orders
-                         WHERE (status = 'pending' OR matched_sku IS NULL)`;
+                         WHERE status = 'pending'`;
             const params: any[] = [];
 
             if (client_id) {
@@ -1343,43 +1343,61 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
             // Log dos primeiros 5 itens para debug
             console.log('📦 Primeiros 5 itens pendentes:', pendingItems.rows.slice(0, 5).map(i => ({
                 id: i.id,
-                codigo_ml: i.codigo_ml,
-                sku_original: i.sku_original,
+                sku_text: i.sku_text,
                 client_id: i.client_id
             })));
 
             for (const item of pendingItems.rows) {
-                // Buscar alias que corresponde ao SKU original (usando o client_id do item)
-                const aliasResult = await pool.query(
-                    `SELECT stock_sku, confidence_default, id 
-                     FROM obsidian.sku_aliases 
-                     WHERE client_id = $1 
-                       AND (LOWER(alias_text) = LOWER($2) OR LOWER(alias_text) = LOWER($3))
-                     ORDER BY confidence_default DESC 
+                let matchedSku = null;
+
+                // 1️⃣ Buscar SKU exato em produtos
+                const produtoResult = await pool.query(
+                    `SELECT sku 
+                     FROM obsidian.produtos 
+                     WHERE UPPER(sku) = UPPER(TRIM($1))
                      LIMIT 1`,
-                    [item.client_id, item.codigo_ml, item.sku_original]
+                    [item.sku_text]
                 );
 
-                if (aliasResult.rows.length > 0) {
-                    const alias = aliasResult.rows[0];
+                if (produtoResult.rows.length > 0) {
+                    matchedSku = produtoResult.rows[0].sku;
+                } else {
+                    // 2️⃣ Buscar em aliases
+                    const aliasResult = await pool.query(
+                        `SELECT stock_sku, id 
+                         FROM obsidian.sku_aliases 
+                         WHERE client_id = $1 
+                           AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                               UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
+                         ORDER BY confidence_default DESC, times_used DESC 
+                         LIMIT 1`,
+                        [item.client_id, item.sku_text]
+                    );
 
+                    if (aliasResult.rows.length > 0) {
+                        matchedSku = aliasResult.rows[0].stock_sku;
+
+                        // Atualizar contador de uso do alias
+                        await pool.query(
+                            `UPDATE obsidian.sku_aliases 
+                             SET times_used = times_used + 1, 
+                                 last_used_at = NOW() 
+                             WHERE id = $1`,
+                            [aliasResult.rows[0].id]
+                        );
+                    }
+                }
+
+                if (matchedSku) {
                     // Atualizar o item com o SKU encontrado
                     await pool.query(
                         `UPDATE raw_export_orders 
                          SET matched_sku = $1, 
                              status = 'matched', 
+                             match_source = 'auto_relate',
                              processed_at = NOW() 
                          WHERE id = $2`,
-                        [alias.stock_sku, item.id]
-                    );
-
-                    // Atualizar contador de uso do alias
-                    await pool.query(
-                        `UPDATE obsidian.sku_aliases 
-                         SET times_used = times_used + 1, 
-                             last_used_at = NOW() 
-                         WHERE id = $1`,
-                        [alias.id]
+                        [matchedSku, item.id]
                     );
 
                     matched++;
