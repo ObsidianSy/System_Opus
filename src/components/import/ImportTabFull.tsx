@@ -83,8 +83,8 @@ export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: Im
         envioNum,
         selectedFile,
         format(importDate, 'yyyy-MM-dd'),
-        usuario?.email,
-        usuario?.nome
+        usuario?.email || 'usuario@sistema.com',
+        usuario?.nome || 'Usuário Sistema'
       );
 
       clearInterval(progressInterval);

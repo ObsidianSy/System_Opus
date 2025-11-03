@@ -56,8 +56,8 @@ export const ImportTab = memo(function ImportTab() {
         selectedFile,
         'ML',
         undefined,
-        usuario?.email,
-        usuario?.nome
+        usuario?.email || 'usuario@sistema.com',
+        usuario?.nome || 'Usuário Sistema'
       );
       clearInterval(progressInterval);
       setUploadProgress(100);

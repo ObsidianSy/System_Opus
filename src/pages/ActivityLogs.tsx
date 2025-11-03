@@ -64,19 +64,19 @@ const fetchActivityLogs = async (filters: {
         }
     })
 
-    const response = await fetch(`http://localhost:3001/api/activity/logs?${params}`)
+    const response = await fetch(`/api/activity/logs?${params}`)
     if (!response.ok) throw new Error("Erro ao buscar logs")
     return response.json()
 }
 
 const fetchActivityStats = async (): Promise<ActivityStats> => {
-    const response = await fetch("http://localhost:3001/api/activity/stats")
+    const response = await fetch("/api/activity/stats")
     if (!response.ok) throw new Error("Erro ao buscar estatísticas")
     return response.json()
 }
 
 const fetchUsers = async (): Promise<User[]> => {
-    const response = await fetch("http://localhost:3001/api/activity/users")
+    const response = await fetch("/api/activity/users")
     if (!response.ok) throw new Error("Erro ao buscar usuários")
     return response.json()
 }
