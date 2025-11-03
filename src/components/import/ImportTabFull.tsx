@@ -92,11 +92,12 @@ export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: Im
 
       const autoRelacionadas = response.auto_relacionadas || 0;
       const pendentes = response.pendentes || 0;
+      const totalLinhas = response.total_linhas || response.linhas_processadas || response.linhas || 0;
 
       // Armazena resultado para exibição
       setUploadResult({
         envioNum: response.envio_num,
-        totalLinhas: response.linhas,
+        totalLinhas,
         autoRelacionadas,
         pendentes
       });

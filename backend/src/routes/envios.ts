@@ -489,6 +489,12 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
             const envioId = envioResult.rows[0].id;
 
+            // LIMPAR LINHAS ANTIGAS SE FOR RE-UPLOAD (evitar duplicação)
+            await pool.query(
+                `DELETE FROM logistica.full_envio_raw WHERE envio_id = $1`,
+                [envioId]
+            );
+
             // 3. INSERIR LINHAS BRUTAS (logistica.full_envio_raw)
             // Cada linha carrega envio_id E import_id para rastreabilidade
             let insertedRows = 0;
@@ -559,13 +565,19 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                         matchedSku = produtoResult.rows[0].sku;
                         matchSource = 'produto_exato';
                     } else {
-                        // 2️⃣ SEGUNDO: Buscar em aliases (codigo_ml ou sku_texto)
+                        // 2️⃣ SEGUNDO: Buscar em aliases (codigo_ml ou sku_texto) com normalização
                         const aliasResult = await pool.query(
                             `SELECT stock_sku, confidence_default, id 
                              FROM obsidian.sku_aliases 
                              WHERE client_id = $1 
-                               AND (LOWER(alias_text) = LOWER($2) OR LOWER(alias_text) = LOWER($3))
-                             ORDER BY confidence_default DESC 
+                               AND (
+                                   UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                   UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
+                                   OR 
+                                   UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                   UPPER(REGEXP_REPLACE($3, '[^A-Z0-9]', '', 'g'))
+                               )
+                             ORDER BY confidence_default DESC, times_used DESC 
                              LIMIT 1`,
                             [clientIdNum, row.codigo_ml, row.sku_texto]
                         );
@@ -611,7 +623,22 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             );
             const remainingPending = parseInt(pendingCount.rows[0].count);
 
-            // 5. ATUALIZAR STATUS DO LOTE
+            console.log(`✅ Auto-relacionamento concluído: ${autoMatched} itens relacionados, ${remainingPending} pendentes`);
+
+            // 5. NORMALIZAR E POPULAR full_envio_item (usando função do banco)
+            // Esta função lê de full_envio_raw e popula full_envio_item com SKUs validados
+            try {
+                await pool.query(
+                    `SELECT logistica.full_envio_normalizar($1::bigint)`,
+                    [envioId]
+                );
+                console.log(`📦 Normalização concluída - full_envio_item populada`);
+            } catch (normError: any) {
+                console.error('⚠️ Erro ao normalizar:', normError.message);
+                // Continua mesmo com erro na normalização
+            }
+
+            // 6. ATUALIZAR STATUS DO LOTE
             const finalStatus = insertedRows > 0 ? 'ready' : 'error';
             await pool.query(
                 `UPDATE obsidian.import_batches 
@@ -622,41 +649,40 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 [insertedRows, finalStatus, importId]
             );
 
-            // 6. ATUALIZAR STATUS DO ENVIO
-            let envioStatus = 'draft';
+            // 7. ATUALIZAR STATUS DO ENVIO
+            // Nota: A função normalizar já atualiza o status (draft se tem pendentes, ready se tudo ok)
+            // Mas vamos garantir que erros sejam marcados
             if (insertedRows === 0) {
-                envioStatus = 'error';
-            } else if (remainingPending === 0) {
-                envioStatus = 'ready'; // Tudo relacionado!
-            } else if (autoMatched > 0) {
-                envioStatus = 'partial'; // Parcialmente relacionado
+                await pool.query(
+                    `UPDATE logistica.full_envio 
+                     SET status = 'error' 
+                     WHERE id = $1`,
+                    [envioId]
+                );
             }
 
-            await pool.query(
-                `UPDATE logistica.full_envio 
-                 SET status = $1 
-                 WHERE id = $2`,
-                [envioStatus, envioId]
-            );
-
             // Registrar log de atividade
-            await logActivity({
-                user_email: req.body.user_email || 'sistema',
-                user_name: req.body.user_name || 'Sistema',
-                action: 'upload_full',
-                entity_type: 'envio',
-                entity_id: envioId.toString(),
-                details: {
-                    envio_num: envioNumValue,
-                    filename,
-                    total_linhas: jsonData.length,
-                    auto_relacionadas: autoMatched,
-                    pendentes: remainingPending,
-                    client_id: clientIdNum
-                },
-                ip_address: req.ip,
-                user_agent: req.get('user-agent')
-            });
+            try {
+                await logActivity({
+                    user_email: req.body.user_email || 'sistema',
+                    user_name: req.body.user_name || 'Sistema',
+                    action: 'upload_full',
+                    entity_type: 'envio',
+                    entity_id: envioId.toString(),
+                    details: {
+                        envio_num: envioNumValue,
+                        filename,
+                        total_linhas: jsonData.length,
+                        auto_relacionadas: autoMatched,
+                        pendentes: remainingPending,
+                        client_id: clientIdNum
+                    },
+                    ip_address: req.ip,
+                    user_agent: req.get('user-agent')
+                });
+            } catch (logError) {
+                console.error('⚠️ Erro ao salvar log (não afeta operação):', logError);
+            }
 
             res.json({
                 success: true,
@@ -693,21 +719,25 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             );
 
             // Registrar log de atividade
-            await logActivity({
-                user_email: req.body.user_email || 'sistema',
-                user_name: req.body.user_name || 'Sistema',
-                action: 'upload_ml',
-                entity_type: 'import_batch',
-                entity_id: batchId,
-                details: {
-                    filename,
-                    total_rows: jsonData.length,
-                    client_id: clientIdNum,
-                    envio_num: envio_num || batchId
-                },
-                ip_address: req.ip,
-                user_agent: req.get('user-agent')
-            });
+            try {
+                await logActivity({
+                    user_email: req.body.user_email || 'sistema',
+                    user_name: req.body.user_name || 'Sistema',
+                    action: 'upload_ml',
+                    entity_type: 'import_batch',
+                    entity_id: batchId,
+                    details: {
+                        filename,
+                        total_rows: jsonData.length,
+                        client_id: clientIdNum,
+                        envio_num: envio_num || batchId
+                    },
+                    ip_address: req.ip,
+                    user_agent: req.get('user-agent')
+                });
+            } catch (logError) {
+                console.error('⚠️ Erro ao salvar log (não afeta operação):', logError);
+            }
 
             res.json({
                 success: true,
@@ -933,13 +963,39 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
                 );
 
                 if (existingAlias.rows.length === 0) {
-                    await pool.query(
-                        `INSERT INTO obsidian.sku_aliases 
-                         (client_id, alias_text, stock_sku, confidence_default, times_used) 
-                         VALUES ($1, $2, $3, 0.95, 1)`,
-                        [item.client_id, textToLearn, sku]
-                    );
-                    console.log('✅ Alias criado:', textToLearn, '->', sku);
+                    try {
+                        await pool.query(
+                            `INSERT INTO obsidian.sku_aliases 
+                             (client_id, alias_text, stock_sku, confidence_default, times_used) 
+                             VALUES ($1, $2, $3, 0.95, 1)`,
+                            [item.client_id, textToLearn, sku]
+                        );
+                        console.log('✅ Alias criado:', textToLearn, '->', sku);
+                    } catch (insertError: any) {
+                        if (insertError.code === '23505') {
+                            console.log('⚠️ Alias já existe (race condition), atualizando...');
+                            const retryAlias = await pool.query(
+                                `SELECT id FROM obsidian.sku_aliases 
+                                 WHERE client_id = $1 
+                                   AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                       UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))`,
+                                [item.client_id, textToLearn]
+                            );
+                            if (retryAlias.rows.length > 0) {
+                                await pool.query(
+                                    `UPDATE obsidian.sku_aliases 
+                                     SET stock_sku = $1, 
+                                         times_used = times_used + 1, 
+                                         last_used_at = NOW() 
+                                     WHERE id = $2`,
+                                    [sku, retryAlias.rows[0].id]
+                                );
+                                console.log('✅ Alias atualizado após retry:', textToLearn, '->', sku);
+                            }
+                        } else {
+                            throw insertError;
+                        }
+                    }
                 } else {
                     await pool.query(
                         `UPDATE obsidian.sku_aliases 
@@ -1120,22 +1176,26 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
             console.log(`✅ ML Relacionados: ${matched} | Pendentes: ${notMatched}`);
 
             // Registrar log de atividade
-            await logActivity({
-                user_email: req.body.user_email || 'sistema',
-                user_name: req.body.user_name || 'Sistema',
-                action: 'auto_relate',
-                entity_type: source === 'FULL' ? 'envio' : 'pedidos',
-                entity_id: source === 'FULL' ? envio_id : (client_id || 'all'),
-                details: {
-                    source,
-                    total: pendingItems.rows.length,
-                    matched,
-                    not_matched: notMatched,
-                    taxa_match: pendingItems.rows.length > 0 ? (matched / pendingItems.rows.length) * 100 : 0
-                },
-                ip_address: req.ip,
-                user_agent: req.get('user-agent')
-            });
+            try {
+                await logActivity({
+                    user_email: req.body.user_email || 'sistema',
+                    user_name: req.body.user_name || 'Sistema',
+                    action: 'auto_relate',
+                    entity_type: source === 'FULL' ? 'envio' : 'pedidos',
+                    entity_id: source === 'FULL' ? envio_id : (client_id || 'all'),
+                    details: {
+                        source,
+                        total: pendingItems.rows.length,
+                        matched,
+                        not_matched: notMatched,
+                        taxa_match: pendingItems.rows.length > 0 ? (matched / pendingItems.rows.length) * 100 : 0
+                    },
+                    ip_address: req.ip,
+                    user_agent: req.get('user-agent')
+                });
+            } catch (logError) {
+                console.error('⚠️ Erro ao salvar log (não afeta operação):', logError);
+            }
 
             res.json({
                 success: true,
@@ -1187,18 +1247,44 @@ enviosRouter.post('/relacionar-manual', async (req: Request, res: Response) => {
             const existingAlias = await pool.query(
                 `SELECT id FROM obsidian.sku_aliases 
                  WHERE client_id = $1 
-                   AND LOWER(alias_text) = LOWER($2)`,
+                   AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                       UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))`,
                 [client_id, rawData.sku_texto]
             );
 
             if (existingAlias.rows.length === 0) {
                 // Criar novo alias
-                await pool.query(
-                    `INSERT INTO obsidian.sku_aliases 
-                     (client_id, alias_text, stock_sku, confidence_default, times_used) 
-                     VALUES ($1, $2, $3, 0.95, 1)`,
-                    [client_id, rawData.sku_texto, stock_sku]
-                );
+                try {
+                    await pool.query(
+                        `INSERT INTO obsidian.sku_aliases 
+                         (client_id, alias_text, stock_sku, confidence_default, times_used) 
+                         VALUES ($1, $2, $3, 0.95, 1)`,
+                        [client_id, rawData.sku_texto, stock_sku]
+                    );
+                } catch (insertError: any) {
+                    if (insertError.code === '23505') {
+                        console.log('⚠️ Alias já existe (race condition), atualizando...');
+                        const retryAlias = await pool.query(
+                            `SELECT id FROM obsidian.sku_aliases 
+                             WHERE client_id = $1 
+                               AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                   UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))`,
+                            [client_id, rawData.sku_texto]
+                        );
+                        if (retryAlias.rows.length > 0) {
+                            await pool.query(
+                                `UPDATE obsidian.sku_aliases 
+                                 SET stock_sku = $1, 
+                                     times_used = times_used + 1, 
+                                     last_used_at = NOW() 
+                                 WHERE id = $2`,
+                                [stock_sku, retryAlias.rows[0].id]
+                            );
+                        }
+                    } else {
+                        throw insertError;
+                    }
+                }
             } else {
                 // Atualizar alias existente
                 await pool.query(
@@ -1209,6 +1295,27 @@ enviosRouter.post('/relacionar-manual', async (req: Request, res: Response) => {
                      WHERE id = $2`,
                     [stock_sku, existingAlias.rows[0].id]
                 );
+            }
+        }
+
+        // Buscar envio_id para normalizar
+        const envioIdResult = await pool.query(
+            `SELECT envio_id FROM logistica.full_envio_raw WHERE id = $1`,
+            [raw_id]
+        );
+
+        if (envioIdResult.rows.length > 0) {
+            const envio_id = envioIdResult.rows[0].envio_id;
+
+            // Chamar função de normalização para atualizar full_envio_item
+            try {
+                await pool.query(
+                    `SELECT logistica.full_envio_normalizar($1::bigint)`,
+                    [envio_id]
+                );
+                console.log(`📦 Normalização executada para envio ${envio_id}`);
+            } catch (normError: any) {
+                console.error('⚠️ Erro ao normalizar:', normError.message);
             }
         }
 
@@ -1295,19 +1402,48 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
             console.log('📋 Aliases encontrados:', existingAlias.rows);
 
             if (existingAlias.rows.length === 0) {
-                // Alias não existe, criar novo
-                await pool.query(
-                    `INSERT INTO obsidian.sku_aliases 
-                     (client_id, alias_text, stock_sku, confidence_default, times_used) 
-                     VALUES ($1, $2, $3, 0.95, 1)`,
-                    [clientId, alias_text, matched_sku]
-                );
-                console.log('✅ Alias criado:', alias_text, '->', matched_sku);
-                aliasOps = 1;
+                // Alias não existe, tentar criar novo
+                try {
+                    await pool.query(
+                        `INSERT INTO obsidian.sku_aliases 
+                         (client_id, alias_text, stock_sku, confidence_default, times_used) 
+                         VALUES ($1, $2, $3, 0.95, 1)`,
+                        [clientId, alias_text, matched_sku]
+                    );
+                    console.log('✅ Alias criado:', alias_text, '->', matched_sku);
+                    aliasOps = 1;
+                } catch (insertError: any) {
+                    // Se falhar por duplicata (race condition), buscar novamente e atualizar
+                    if (insertError.code === '23505') {
+                        console.log('⚠️ Alias criado em paralelo, buscando novamente...');
+                        const retryAlias = await pool.query(
+                            `SELECT id FROM obsidian.sku_aliases 
+                             WHERE client_id = $1 
+                               AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                   UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))`,
+                            [clientId, alias_text]
+                        );
+                        if (retryAlias.rows.length > 0) {
+                            await pool.query(
+                                `UPDATE obsidian.sku_aliases 
+                                 SET stock_sku = $1, 
+                                     times_used = times_used + 1, 
+                                     last_used_at = NOW() 
+                                 WHERE id = $2`,
+                                [matched_sku, retryAlias.rows[0].id]
+                            );
+                            console.log('✅ Alias atualizado após retry:', alias_text, '->', matched_sku);
+                            aliasOps = 1;
+                        }
+                    } else {
+                        // Outro tipo de erro, re-lançar
+                        throw insertError;
+                    }
+                }
             } else {
                 // Alias já existe, apenas atualizar o uso
                 const existingSku = existingAlias.rows[0].stock_sku;
-                console.log('ℹ️ Alias já existe:', alias_text, '->', existingSku, '(atual:', matched_sku, ')');
+                console.log('ℹ️ Alias já existe:', alias_text, '->', existingSku, '(atualizando para:', matched_sku, ')');
 
                 await pool.query(
                     `UPDATE obsidian.sku_aliases 
@@ -1331,33 +1467,38 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
 
         const hasPending = parseInt(pendingCount.rows[0].count) > 0;
 
-        // Se não tem mais pendentes, atualizar status do envio
-        if (!hasPending) {
+        // Chamar função de normalização para atualizar full_envio_item
+        try {
             await pool.query(
-                `UPDATE logistica.full_envio 
-                 SET status = 'ready' 
-                 WHERE id = $1`,
+                `SELECT logistica.full_envio_normalizar($1::bigint)`,
                 [envioId]
             );
+            console.log(`📦 Normalização executada para envio ${envioId}`);
+        } catch (normError: any) {
+            console.error('⚠️ Erro ao normalizar:', normError.message);
         }
 
         // Registrar log de atividade
-        await logActivity({
-            user_email: req.body.user_email || 'sistema',
-            user_name: req.body.user_name || 'Sistema',
-            action: 'relate_item',
-            entity_type: 'full_raw',
-            entity_id: raw_id.toString(),
-            details: {
-                matched_sku,
-                alias_created: aliasOps > 0,
-                alias_text,
-                envio_id: envioId,
-                source: 'FULL'
-            },
-            ip_address: req.ip,
-            user_agent: req.get('user-agent')
-        });
+        try {
+            await logActivity({
+                user_email: req.body.user_email || 'sistema',
+                user_name: req.body.user_name || 'Sistema',
+                action: 'relate_item',
+                entity_type: 'full_raw',
+                entity_id: raw_id.toString(),
+                details: {
+                    matched_sku,
+                    alias_created: aliasOps > 0,
+                    alias_text,
+                    envio_id: envioId,
+                    source: 'FULL'
+                },
+                ip_address: req.ip,
+                user_agent: req.get('user-agent')
+            });
+        } catch (logError) {
+            console.error('⚠️ Erro ao salvar log (não afeta operação):', logError);
+        }
 
         res.json({
             envio_id: envioId,
@@ -1474,12 +1615,15 @@ enviosRouter.post('/auto-relate', async (req: Request, res: Response) => {
                     continue;
                 }
 
-                // 2. Tentar match via aliases
+                // 2. Tentar match via aliases com normalização
                 const aliasResult = await pool.query(
-                    `SELECT sku_produto FROM obsidian.sku_aliases 
-                     WHERE UPPER(alias) = $1 AND ativo = true 
+                    `SELECT stock_sku, id 
+                     FROM obsidian.sku_aliases 
+                     WHERE UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                           UPPER(REGEXP_REPLACE($1, '[^A-Z0-9]', '', 'g'))
+                     ORDER BY confidence_default DESC, times_used DESC
                      LIMIT 1`,
-                    [skuNormalized]
+                    [item.sku_text]
                 );
 
                 if (aliasResult.rows.length > 0) {
@@ -1488,8 +1632,18 @@ enviosRouter.post('/auto-relate', async (req: Request, res: Response) => {
                         `UPDATE raw_export_orders 
                          SET matched_sku = $1, status = 'matched'
                          WHERE id = $2`,
-                        [aliasResult.rows[0].sku_produto, item.id]
+                        [aliasResult.rows[0].stock_sku, item.id]
                     );
+
+                    // Atualizar contador de uso do alias
+                    await pool.query(
+                        `UPDATE obsidian.sku_aliases 
+                         SET times_used = times_used + 1, 
+                             last_used_at = NOW() 
+                         WHERE id = $1`,
+                        [aliasResult.rows[0].id]
+                    );
+
                     matched++;
                 }
             }
@@ -1537,99 +1691,48 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
 
             const envio = envioResult.rows[0];
 
-            // Buscar itens de full_envio_item (já relacionados e normalizados pela função full_envio_normalizar)
-            // Nota: Emite apenas os itens já relacionados, ignora pendentes
-            const itemsResult = await pool.query(
-                `SELECT 
-                    id,
-                    sku,
-                    qtd as quantidade,
-                    preco_unit_interno as preco_unitario,
-                    codigo_ml,
-                    envio_id
-                 FROM logistica.full_envio_item 
-                 WHERE envio_id = $1
-                 ORDER BY id`,
+            // Verificar se há itens pendentes
+            const pendingCheck = await pool.query(
+                `SELECT COUNT(*) as count 
+                 FROM logistica.full_envio_raw 
+                 WHERE envio_id = $1 AND status = 'pending'`,
                 [envio_id]
             );
 
-            if (itemsResult.rows.length === 0) {
+            if (parseInt(pendingCheck.rows[0].count) > 0) {
                 return res.status(400).json({
-                    error: 'Nenhum item encontrado em full_envio_item. Execute a normalização primeiro.'
+                    error: 'Existem itens pendentes de relacionamento. Relacione todos os SKUs antes de emitir.'
                 });
             }
 
-            // Montar JSON de itens com ext_id único
-            const items = itemsResult.rows.map((item) => {
-                // Gerar ext_id: FULL:{item_id}:{envio_id}:{codigo_ml}:{sku}:{qtd}
-                // Usa o ID da tabela (único e permanente)
-                const ext_id = `FULL:${item.id}:${envio_id}:${item.codigo_ml || ''}:${item.sku}:${parseFloat(item.quantidade)}`;
+            // Contar itens que serão emitidos
+            const itemCount = await pool.query(
+                `SELECT COUNT(*) as count FROM logistica.full_envio_item WHERE envio_id = $1`,
+                [envio_id]
+            );
 
-                return {
-                    sku: item.sku,
-                    nome_produto: item.sku,
-                    quantidade: parseFloat(item.quantidade),
-                    preco_unitario: parseFloat(item.preco_unitario || 0),
-                    ext_id: ext_id
-                };
-            });
-
-            // Gerar pedido_uid único baseado no envio
-            const pedido_uid = `FULL-${envio.envio_num}-${envio.id}`;
-            const data_venda = envio.created_at ? new Date(envio.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
-            const canal = 'FULL';
-
-            // Inserir vendas diretamente (sem função do banco)
-            let inseridos = 0;
-            let ja_existiam = 0;
-
-            for (const item of items) {
-                try {
-                    // Verificar se já existe (evitar duplicação)
-                    const existingCheck = await pool.query(
-                        `SELECT id FROM obsidian.vendas WHERE pedido_uid = $1 AND ext_id = $2`,
-                        [pedido_uid, item.ext_id]
-                    );
-
-                    if (existingCheck.rows.length > 0) {
-                        ja_existiam++;
-                        continue;
-                    }
-
-                    // Inserir venda
-                    await pool.query(
-                        `INSERT INTO obsidian.vendas (
-                            data_venda, 
-                            nome_cliente, 
-                            sku_produto, 
-                            quantidade_vendida, 
-                            preco_unitario, 
-                            valor_total,
-                            nome_produto,
-                            canal,
-                            pedido_uid,
-                            ext_id
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-                        [
-                            data_venda,
-                            envio.cliente_nome,
-                            item.sku,
-                            item.quantidade,
-                            item.preco_unitario,
-                            item.quantidade * item.preco_unitario,
-                            item.nome_produto || item.sku,
-                            canal,
-                            pedido_uid,
-                            item.ext_id
-                        ]
-                    );
-
-                    inseridos++;
-                } catch (error: any) {
-                    console.error(`Erro ao inserir item ${item.sku}:`, error.message);
-                }
+            if (parseInt(itemCount.rows[0].count) === 0) {
+                return res.status(400).json({
+                    error: 'Nenhum item encontrado para emitir. Execute a normalização primeiro.'
+                });
             }
+
+            // Usar import_date se disponível, senão usar hoje
+            const data_emissao = envio.import_date
+                ? new Date(envio.import_date).toISOString().split('T')[0]
+                : new Date().toISOString().split('T')[0];
+
+            // Chamar função do banco que faz TUDO:
+            // - Cria movimentos de estoque (inclusive para componentes de kits)
+            // - Atualiza quantidade_atual dos produtos
+            // - Insere vendas em obsidian.vendas
+            // - Atualiza status do envio para 'registrado'
+            await pool.query(
+                `SELECT logistica.full_envio_emitir($1::bigint, $2::date)`,
+                [envio_id, data_emissao]
+            );
+
+            console.log(`✅ Vendas emitidas com sucesso para envio ${envio.envio_num}`);
 
             // Atualizar status do envio
             await pool.query(
@@ -1640,32 +1743,43 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                 [envio_id]
             );
 
+            // Contar quantas vendas foram criadas
+            const salesCount = await pool.query(
+                `SELECT COUNT(*) as count 
+                 FROM obsidian.vendas 
+                 WHERE canal = 'FULL-INBOUND' 
+                   AND nome_cliente = $1`,
+                [envio.cliente_nome]
+            );
+
             // Registrar log de atividade
-            await logActivity({
-                user_email: req.body.user_email || 'sistema',
-                user_name: req.body.user_name || 'Sistema',
-                action: 'emit_sales',
-                entity_type: 'envio',
-                entity_id: envio_id.toString(),
-                details: {
-                    source: 'FULL',
-                    pedido_uid,
-                    total_items: items.length,
-                    inseridos,
-                    ja_existiam,
-                    cliente: envio.cliente_nome
-                },
-                ip_address: req.ip,
-                user_agent: req.get('user-agent')
-            });
+            try {
+                await logActivity({
+                    user_email: req.body.user_email || 'sistema',
+                    user_name: req.body.user_name || 'Sistema',
+                    action: 'emit_sales',
+                    entity_type: 'envio',
+                    entity_id: envio_id.toString(),
+                    details: {
+                        source: 'FULL',
+                        envio_num: envio.envio_num,
+                        total_items: parseInt(itemCount.rows[0].count),
+                        cliente: envio.cliente_nome,
+                        data_emissao
+                    },
+                    ip_address: req.ip,
+                    user_agent: req.get('user-agent')
+                });
+            } catch (logError) {
+                console.error('⚠️ Erro ao salvar log (não afeta operação):', logError);
+            }
 
             res.json({
                 success: true,
                 message: 'Vendas emitidas com sucesso',
-                pedido_uid,
-                items_count: items.length,
-                inseridos,
-                ja_existiam
+                envio_num: envio.envio_num,
+                items_count: parseInt(itemCount.rows[0].count),
+                data_emissao
             });
         } else if (source === 'ML') {
             // ML: Processar vendas do Mercado Livre
@@ -1836,23 +1950,27 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
 
 
             // Registrar log de atividade
-            await logActivity({
-                user_email: req.body.user_email || 'sistema',
-                user_name: req.body.user_name || 'Sistema',
-                action: 'emit_sales',
-                entity_type: 'pedidos',
-                entity_id: finalImportId || client_id,
-                details: {
-                    source: 'ML',
-                    candidatos: ordersResult.rows.length,
-                    inseridos,
-                    ja_existiam,
-                    full_skipped,
-                    client_id
-                },
-                ip_address: req.ip,
-                user_agent: req.get('user-agent')
-            });
+            try {
+                await logActivity({
+                    user_email: req.body.user_email || 'sistema',
+                    user_name: req.body.user_name || 'Sistema',
+                    action: 'emit_sales',
+                    entity_type: 'pedidos',
+                    entity_id: finalImportId || client_id,
+                    details: {
+                        source: 'ML',
+                        candidatos: ordersResult.rows.length,
+                        inseridos,
+                        ja_existiam,
+                        full_skipped,
+                        client_id
+                    },
+                    ip_address: req.ip,
+                    user_agent: req.get('user-agent')
+                });
+            } catch (logError) {
+                console.error('⚠️ Erro ao salvar log (não afeta operação):', logError);
+            }
 
             res.json([{
                 candidatos: ordersResult.rows.length,

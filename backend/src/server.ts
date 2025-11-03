@@ -13,6 +13,7 @@ import { receitaProdutoRouter } from './routes/receitaProduto';
 import { enviosRouter } from './routes/envios';
 import { activityRouter } from './routes/activity';
 import authRouter from './routes/auth';
+import { startCleanupTask } from './tasks/cleanupActivityLogs';
 
 // Carrega variáveis de ambiente
 dotenv.config();
@@ -149,6 +150,11 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 server.on('listening', () => {
     const addr = server.address();
     console.log('✅ Servidor escutando em:', addr);
+    try {
+        startCleanupTask();
+    } catch (err) {
+        console.error('❌ Não foi possível iniciar task de limpeza:', err);
+    }
 });
 
 server.on('error', (error: any) => {

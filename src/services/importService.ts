@@ -660,7 +660,9 @@ export const importService = {
   async uploadFileFull(cliente: string, envioNum: string, file: File, importDate?: string, userEmail?: string, userName?: string): Promise<{
     envio_id: number;
     envio_num: string;
-    linhas: number;
+    linhas?: number;
+    total_linhas?: number;
+    linhas_processadas?: number;
     status: string;
     auto_relacionadas?: number;
     pendentes?: number;
