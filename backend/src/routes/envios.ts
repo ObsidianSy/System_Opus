@@ -599,11 +599,36 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
                     // Se encontrou match (por produto ou alias), relacionar
                     if (matchedSku) {
+                        // Buscar dados do produto para popular full_envio_item
+                        const produtoInfo = await pool.query(
+                            `SELECT sku, preco_unitario, COALESCE(is_kit, FALSE) as is_kit
+                             FROM obsidian.produtos 
+                             WHERE sku = $1`,
+                            [matchedSku]
+                        );
+
+                        if (produtoInfo.rows.length > 0) {
+                            const prod = produtoInfo.rows[0];
+                            const valorTotal = prod.preco_unitario * row.qtd;
+
+                            // Inserir em full_envio_item
+                            await pool.query(
+                                `INSERT INTO logistica.full_envio_item 
+                                 (envio_id, codigo_ml, sku, qtd, is_kit, preco_unit_interno, valor_total)
+                                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                                 ON CONFLICT (envio_id, sku, codigo_ml) 
+                                 DO UPDATE SET qtd = logistica.full_envio_item.qtd + EXCLUDED.qtd`,
+                                [envioId, row.codigo_ml, matchedSku, row.qtd, prod.is_kit, prod.preco_unitario, valorTotal]
+                            );
+                        }
+
+                        // Atualizar status em full_envio_raw
                         await pool.query(
                             `UPDATE logistica.full_envio_raw 
                              SET matched_sku = $1, 
                                  status = 'matched', 
-                                 processed_at = NOW() 
+                                 processed_at = NOW(),
+                                 error_msg = NULL
                              WHERE id = $2`,
                             [matchedSku, row.id]
                         );
@@ -701,7 +726,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     : `✅ ${autoMatched} itens relacionados. ${remainingPending} aguardam relacionamento manual.`
             });
         } else {
-            // ML: Manter lógica antiga com import_batches
+            // ML: Criar batch e inserir dados em raw_export_orders
             const result = await pool.query(
                 `INSERT INTO obsidian.import_batches (filename, source, client_id, status, total_rows) 
                  VALUES ($1, $2, $3, $4, $5) RETURNING *`,
@@ -709,13 +734,105 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             );
 
             const batchId = result.rows[0].import_id;
-            const processedRows = jsonData.length;
+            let insertedRows = 0;
+            const errors: string[] = [];
 
+            console.log(`📦 Processando ${jsonData.length} linhas do Excel ML...`);
+
+            // Inserir cada linha em raw_export_orders
+            for (let i = 0; i < jsonData.length; i++) {
+                const row = jsonData[i];
+
+                try {
+                    // Extrair campos principais do Excel UpSeller
+                    const orderIdPlatform = row['Nº de Pedido da Plataforma'] || '';
+                    const orderIdInternal = row['Nº de Pedido'] || '';
+                    const orderDate = row['Hora do Pedido'] || row['Hora do Pagamento'] || null;
+                    const sku = row['SKU'] || '';
+                    const qty = parseFloat(row['Qtd. do Produto'] || 0);
+                    const unitPrice = parseFloat(row['Preço de Produto'] || 0);
+                    const customer = row['Nome de Comprador'] || '';
+                    const channel = row['Plataformas'] || row['Nome da Loja no UpSeller'] || 'ML';
+
+                    if (!sku || qty <= 0) {
+                        continue; // Pular linhas sem SKU ou quantidade
+                    }
+
+                    // Inserir em raw_export_orders (com TODAS as colunas do Excel)
+                    await pool.query(
+                        `INSERT INTO raw_export_orders (
+                            "Nº de Pedido da Plataforma",
+                            "Nº de Pedido",
+                            "Plataformas",
+                            "Nome da Loja no UpSeller",
+                            "Estado do Pedido",
+                            "Hora do Pedido",
+                            "Hora do Pagamento",
+                            "SKU",
+                            "Qtd. do Produto",
+                            "Preço de Produto",
+                            "Nome de Comprador",
+                            client_id,
+                            import_id,
+                            original_filename,
+                            row_num,
+                            order_id,
+                            order_date,
+                            sku_text,
+                            qty,
+                            unit_price,
+                            total,
+                            customer,
+                            channel,
+                            status,
+                            created_at
+                        ) VALUES (
+                            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                            $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW()
+                        )`,
+                        [
+                            orderIdPlatform,
+                            orderIdInternal,
+                            row['Plataformas'],
+                            row['Nome da Loja no UpSeller'],
+                            row['Estado do Pedido'],
+                            row['Hora do Pedido'],
+                            row['Hora do Pagamento'],
+                            sku,
+                            qty,
+                            unitPrice,
+                            customer,
+                            clientIdNum,
+                            batchId,
+                            filename,
+                            i + 1,
+                            orderIdPlatform || orderIdInternal,
+                            orderDate ? new Date(orderDate) : null,
+                            sku,
+                            qty,
+                            unitPrice,
+                            unitPrice * qty,
+                            customer,
+                            channel,
+                            'pending' // Status inicial
+                        ]
+                    );
+
+                    insertedRows++;
+                } catch (rowError: any) {
+                    console.error(`Erro na linha ${i + 1}:`, rowError.message);
+                    errors.push(`Linha ${i + 1}: ${rowError.message}`);
+                }
+            }
+
+            console.log(`✅ ${insertedRows} linhas inseridas em raw_export_orders`);
+
+            // Atualizar batch com dados processados
             await pool.query(
                 `UPDATE obsidian.import_batches 
                  SET processed_rows = $1, status = 'ready', finished_at = NOW() 
                  WHERE import_id = $2`,
-                [processedRows, batchId]
+                [insertedRows, batchId]
             );
 
             // Registrar log de atividade
@@ -729,6 +846,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     details: {
                         filename,
                         total_rows: jsonData.length,
+                        inserted_rows: insertedRows,
                         client_id: clientIdNum,
                         envio_num: envio_num || batchId
                     },
@@ -744,7 +862,11 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 batch: result.rows[0],
                 import_id: batchId,
                 envio_num: envio_num || batchId,
-                linhas: processedRows
+                linhas: jsonData.length,
+                linhas_inseridas: insertedRows,
+                linhas_ignoradas: jsonData.length - insertedRows,
+                errors: errors.length > 0 ? errors : undefined,
+                message: `✅ ${insertedRows} linhas importadas com sucesso!`
             });
         }
 
