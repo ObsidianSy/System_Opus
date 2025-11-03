@@ -595,7 +595,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
                     if (produtoResult.rows.length > 0) {
                         matchedSku = produtoResult.rows[0].sku;
-                        matchSource = 'produto_exato';
+                        matchSource = 'direct';
                     } else {
                         // 2️⃣ SEGUNDO: Buscar em aliases (codigo_ml ou sku_texto) com normalização
                         const aliasResult = await pool.query(
@@ -896,8 +896,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 const pendingRows = await pool.query(
                     `SELECT id, sku_text 
                      FROM raw_export_orders 
-                     WHERE import_id = $1 AND status = 'pending'
-                     LIMIT 1000`,
+                     WHERE import_id = $1 AND status = 'pending'`,
                     [batchId]
                 );
 
@@ -924,7 +923,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
                         if (produtoResult.rows.length > 0) {
                             matchedSku = produtoResult.rows[0].sku;
-                            matchSource = 'produto_exato';
+                            matchSource = 'direct';
                         } else {
                             // 2️⃣ SEGUNDO: Buscar em aliases com normalização
                             const aliasResult = await pool.query(
@@ -1472,7 +1471,7 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
                         `UPDATE raw_export_orders 
                          SET matched_sku = $1, 
                              status = 'matched', 
-                             match_source = 'auto_relate',
+                             match_source = 'alias',
                              processed_at = NOW() 
                          WHERE id = $2`,
                         [matchedSku, item.id]
