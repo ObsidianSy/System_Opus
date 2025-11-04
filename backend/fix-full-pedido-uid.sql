@@ -41,7 +41,7 @@ BEGIN
         
         -- Criar movimento de estoque
         INSERT INTO obsidian.estoque_movimentos (
-            sku, tipo, quantidade, origem_tabela, origem_id, observacao, pedido_uid
+            sku, tipo, quantidade, origem_tabela, origem_id, observacao
         )
         VALUES (
             r.sku,
@@ -49,8 +49,7 @@ BEGIN
             0 - r.qtd,
             'full_envio_item',
             r.id::text,
-            CONCAT('Envio FULL ', p_envio_id),
-            v_pedido_uid
+            CONCAT('Envio FULL ', p_envio_id, ' - ', v_pedido_uid)
         )
         ON CONFLICT DO NOTHING;
 
@@ -77,7 +76,7 @@ BEGIN
                       AND sku=comp.component_sku
                 ) THEN
                     INSERT INTO obsidian.estoque_movimentos (
-                        sku, tipo, quantidade, origem_tabela, origem_id, observacao, pedido_uid
+                        sku, tipo, quantidade, origem_tabela, origem_id, observacao
                     )
                     VALUES (
                         comp.component_sku,
@@ -85,8 +84,7 @@ BEGIN
                         0 - (r.qtd * comp.qty),
                         'full_envio_item',
                         r.id::text,
-                        CONCAT('Kit ', r.sku),
-                        v_pedido_uid
+                        CONCAT('Kit ', r.sku, ' - ', v_pedido_uid)
                     );
 
                     UPDATE obsidian.produtos
