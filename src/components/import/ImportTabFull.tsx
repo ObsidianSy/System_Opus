@@ -90,10 +90,10 @@ export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: Im
         eventSource.onmessage = (event) => {
           try {
             const progress = JSON.parse(event.data);
-            const percentage = progress.total > 0 
-              ? Math.round((progress.current / progress.total) * 100) 
+            const percentage = progress.total > 0
+              ? Math.round((progress.current / progress.total) * 100)
               : 0;
-            
+
             setUploadProgress(percentage);
 
             // Fechar conexão quando completar
