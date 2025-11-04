@@ -66,7 +66,7 @@ const pool = new Pool({
     if (canaisfull.rows.length > 0) {
         console.log('⚠️ Encontrados canais com FULL/FBM:');
         console.table(canaisfull.rows);
-        
+
         console.log('\n📊 Analisando se foram emitidos como vendas...');
         const vendasFull = await pool.query(`
             SELECT v.canal, COUNT(*) as total_vendas
@@ -75,7 +75,7 @@ const pool = new Pool({
               AND (v.canal ILIKE '%FULL%' OR v.canal ILIKE '%FBM%')
             GROUP BY v.canal
         `);
-        
+
         if (vendasFull.rows.length > 0) {
             console.log('❌ ERRO! Estas vendas FULL foram emitidas incorretamente:');
             console.table(vendasFull.rows);

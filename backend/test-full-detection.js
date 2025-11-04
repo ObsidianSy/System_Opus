@@ -28,17 +28,17 @@ const pool = new Pool({
     `);
 
     console.log(`📦 Encontrados ${pedidosFull.rows.length} pedidos com Fulfillment:\n`);
-    
+
     pedidosFull.rows.forEach(p => {
         const canal = p.channel?.toUpperCase() || 'ML';
         const metodoEnvio = p.metodo_envio?.toUpperCase() || '';
-        
-        const isFull = canal.includes('FULL') || 
-                       canal.includes('FBM') || 
-                       metodoEnvio.includes('FULL') || 
-                       metodoEnvio.includes('FBM') ||
-                       metodoEnvio.includes('FUFILL');
-        
+
+        const isFull = canal.includes('FULL') ||
+            canal.includes('FBM') ||
+            metodoEnvio.includes('FULL') ||
+            metodoEnvio.includes('FBM') ||
+            metodoEnvio.includes('FUFILL');
+
         console.log(`Pedido: ${p.order_id}`);
         console.log(`  Canal: ${p.channel}`);
         console.log(`  Método: ${p.metodo_envio}`);
@@ -62,7 +62,7 @@ const pool = new Pool({
         GROUP BY "Método de Envio"
         ORDER BY pedidos DESC
     `);
-    
+
     console.table(stats.rows);
 
     await pool.end();

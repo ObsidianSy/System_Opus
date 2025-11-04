@@ -11,14 +11,14 @@ const pool = new Pool({
 
 (async () => {
     console.log('🔍 Estrutura da tabela vendas:\n');
-    
+
     const cols = await pool.query(`
         SELECT column_name, data_type 
         FROM information_schema.columns 
         WHERE table_schema = 'obsidian' AND table_name = 'vendas' 
         ORDER BY ordinal_position
     `);
-    
+
     console.table(cols.rows);
     await pool.end();
 })();

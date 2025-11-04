@@ -44,16 +44,16 @@ const pool = new Pool({
         const metodoEnvio = p.metodo_envio?.toUpperCase() || '';
 
         // Verificar cancelamento
-        const isCancelado = posVenda.includes('CANCELADO') || 
-                           estadoPedido.includes('CANCEL') ||
-                           (razaoCancelamento && razaoCancelamento.trim() !== '');
+        const isCancelado = posVenda.includes('CANCELADO') ||
+            estadoPedido.includes('CANCEL') ||
+            (razaoCancelamento && razaoCancelamento.trim() !== '');
 
         // Verificar FULL
-        const isFull = canal.includes('FULL') || 
-                       canal.includes('FBM') || 
-                       metodoEnvio.includes('FULL') || 
-                       metodoEnvio.includes('FBM') ||
-                       metodoEnvio.includes('FUFILL');
+        const isFull = canal.includes('FULL') ||
+            canal.includes('FBM') ||
+            metodoEnvio.includes('FULL') ||
+            metodoEnvio.includes('FBM') ||
+            metodoEnvio.includes('FUFILL');
 
         let status = '✅ NORMAL';
         if (isCancelado) {

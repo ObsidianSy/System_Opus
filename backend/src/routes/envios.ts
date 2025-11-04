@@ -2647,9 +2647,9 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                     const posVenda = order.pos_venda?.toUpperCase() || '';
                     const razaoCancelamento = order.razao_cancelamento || '';
 
-                    const isCancelado = posVenda.includes('CANCELADO') || 
-                                       estadoPedido.includes('CANCEL') ||
-                                       (razaoCancelamento && razaoCancelamento.trim() !== '');
+                    const isCancelado = posVenda.includes('CANCELADO') ||
+                        estadoPedido.includes('CANCEL') ||
+                        (razaoCancelamento && razaoCancelamento.trim() !== '');
 
                     if (isCancelado) {
                         // Verificar se existe venda para este pedido
@@ -2694,15 +2694,15 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                     // Verificar se o canal OU método de envio é FULL/FBM (nesse caso, pular - não faz baixa)
                     const canal = order.channel?.toUpperCase() || 'ML';
                     const metodoEnvio = order.metodo_envio?.toUpperCase() || '';
-                    
+
                     // Detectar FULL/FBM no canal ou método de envio
                     // Inclui variações: FULL, FBM, FULFILLMENT, FUFILLMENT (erro de digitação comum)
-                    const isFull = canal.includes('FULL') || 
-                                   canal.includes('FBM') || 
-                                   metodoEnvio.includes('FULL') || 
-                                   metodoEnvio.includes('FBM') ||
-                                   metodoEnvio.includes('FUFILL'); // Detecta "Mercado Fufillment" (erro de digitação)
-                    
+                    const isFull = canal.includes('FULL') ||
+                        canal.includes('FBM') ||
+                        metodoEnvio.includes('FULL') ||
+                        metodoEnvio.includes('FBM') ||
+                        metodoEnvio.includes('FUFILL'); // Detecta "Mercado Fufillment" (erro de digitação)
+
                     if (isFull) {
                         full_skipped++;
                         console.log(`⏭️ Pulando pedido ${order.order_id} - Canal/Método FULL: ${canal} / ${metodoEnvio}`);

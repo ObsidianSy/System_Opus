@@ -74,7 +74,7 @@ const pool = new Pool({
 
     if (vendasParaEstornar.rows.length > 0) {
         console.log('⚠️ ATENÇÃO! Encontradas vendas que estão canceladas mas ainda no sistema:\n');
-        
+
         vendasParaEstornar.rows.forEach((v, idx) => {
             console.log(`${idx + 1}. Pedido: ${v.pedido_uid}`);
             console.log(`   Cliente: ${v.nome_cliente}`);
