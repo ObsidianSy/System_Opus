@@ -113,8 +113,8 @@ estoqueRouter.post('/', async (req: Request, res: Response) => {
 
                 if (componenteExists.rows.length === 0) {
                     await client.query('ROLLBACK');
-                    return res.status(400).json({ 
-                        error: `Componente ${comp.sku_componente} não existe no estoque. Cadastre-o primeiro.` 
+                    return res.status(400).json({
+                        error: `Componente ${comp.sku_componente} não existe no estoque. Cadastre-o primeiro.`
                     });
                 }
 
@@ -190,8 +190,8 @@ estoqueRouter.put('/:sku', async (req: Request, res: Response) => {
 
                     if (componenteExists.rows.length === 0) {
                         await client.query('ROLLBACK');
-                        return res.status(400).json({ 
-                            error: `Componente ${comp.sku_componente} não existe no estoque. Cadastre-o primeiro.` 
+                        return res.status(400).json({
+                            error: `Componente ${comp.sku_componente} não existe no estoque. Cadastre-o primeiro.`
                         });
                     }
 
