@@ -182,3 +182,5 @@ Se o status mudar para cancelado, a venda deve ser removida integralmente.
 
 
 E tambem sempre que vc criar algo que use alguma funcionalidade do banco de dados como tabelas principalmente, consulta la pra voce ver como esta o nome pra nao colocar nomes errados nem campos errados colocar exatamente igual ta no BD.
+
+mais uma coisa caso vc tenha alguma duvida nao faca nada, pergunte antes, mas isso somente se vc realmente tiver alguma duvida, se nao pode seguir.

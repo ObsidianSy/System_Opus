@@ -2594,6 +2594,10 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                     order_date,
                     customer,
                     channel,
+                    "Método de Envio" as metodo_envio,
+                    "Estado do Pedido" as estado_pedido,
+                    "Pós-venda/Cancelado/Devolvido" as pos_venda,
+                    "Razão do Cancelamento" as razao_cancelamento,
                     client_id,
                     json_agg(json_build_object(
                         'sku', matched_sku,
@@ -2602,7 +2606,7 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                     )) as items
                  FROM raw_export_orders
                  ${whereClause}
-                 GROUP BY order_id, order_date, customer, channel, client_id
+                 GROUP BY order_id, order_date, customer, channel, "Método de Envio", "Estado do Pedido", "Pós-venda/Cancelado/Devolvido", "Razão do Cancelamento", client_id
                  ORDER BY order_id`,
                 params
             );
@@ -2617,6 +2621,8 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
             let inseridos = 0;
             let ja_existiam = 0;
             let full_skipped = 0;
+            let cancelados_skipped = 0;
+            let cancelados_removidos = 0;
             const erros: any[] = [];
 
             // Processar cada pedido
@@ -2634,10 +2640,72 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
 
                     const clienteNome = clientResult.rows[0].nome;
 
-                    // Verificar se o canal é FULL (nesse caso, pular - não faz baixa)
+                    // ===== REGRA 1: VERIFICAR CANCELAMENTO =====
+                    // Pedidos cancelados NÃO devem gerar vendas
+                    // Se já existir venda, deve ser REMOVIDA
+                    const estadoPedido = order.estado_pedido?.toUpperCase() || '';
+                    const posVenda = order.pos_venda?.toUpperCase() || '';
+                    const razaoCancelamento = order.razao_cancelamento || '';
+
+                    const isCancelado = posVenda.includes('CANCELADO') || 
+                                       estadoPedido.includes('CANCEL') ||
+                                       (razaoCancelamento && razaoCancelamento.trim() !== '');
+
+                    if (isCancelado) {
+                        // Verificar se existe venda para este pedido
+                        const pedidoUid = `ML-${order.order_id}`;
+                        const vendaExistente = await pool.query(
+                            `SELECT venda_id, sku_produto, quantidade_vendida, nome_cliente 
+                             FROM obsidian.vendas 
+                             WHERE pedido_uid = $1`,
+                            [pedidoUid]
+                        );
+
+                        if (vendaExistente.rows.length > 0) {
+                            // ===== ESTORNAR VENDA CANCELADA =====
+                            // 1. DEVOLVER ESTOQUE (aumentar quantidade_atual)
+                            for (const venda of vendaExistente.rows) {
+                                await pool.query(
+                                    `UPDATE obsidian.produtos 
+                                     SET quantidade_atual = quantidade_atual + $1 
+                                     WHERE UPPER(sku) = UPPER($2)`,
+                                    [venda.quantidade_vendida, venda.sku_produto]
+                                );
+
+                                console.log(`📦 Estoque devolvido: ${venda.quantidade_vendida}x ${venda.sku_produto}`);
+                            }
+
+                            // 2. REMOVER venda da tabela (regra: "deve ser removida ao atualizar status para cancelado")
+                            await pool.query(
+                                `DELETE FROM obsidian.vendas WHERE pedido_uid = $1`,
+                                [pedidoUid]
+                            );
+
+                            cancelados_removidos++;
+                            console.log(`🗑️ Venda estornada - Pedido cancelado: ${order.order_id} (${vendaExistente.rows.length} itens)`);
+                        } else {
+                            // Apenas pular (não emitir nova venda)
+                            cancelados_skipped++;
+                        }
+                        continue; // Não processar este pedido
+                    }
+
+                    // ===== REGRA 2: VERIFICAR FULFILLMENT =====
+                    // Verificar se o canal OU método de envio é FULL/FBM (nesse caso, pular - não faz baixa)
                     const canal = order.channel?.toUpperCase() || 'ML';
-                    if (canal.includes('FULL') || canal.includes('FBM')) {
+                    const metodoEnvio = order.metodo_envio?.toUpperCase() || '';
+                    
+                    // Detectar FULL/FBM no canal ou método de envio
+                    // Inclui variações: FULL, FBM, FULFILLMENT, FUFILLMENT (erro de digitação comum)
+                    const isFull = canal.includes('FULL') || 
+                                   canal.includes('FBM') || 
+                                   metodoEnvio.includes('FULL') || 
+                                   metodoEnvio.includes('FBM') ||
+                                   metodoEnvio.includes('FUFILL'); // Detecta "Mercado Fufillment" (erro de digitação)
+                    
+                    if (isFull) {
                         full_skipped++;
+                        console.log(`⏭️ Pulando pedido ${order.order_id} - Canal/Método FULL: ${canal} / ${metodoEnvio}`);
                         continue;
                     }
 
@@ -2720,6 +2788,8 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                         inseridos,
                         ja_existiam,
                         full_skipped,
+                        cancelados_skipped,
+                        cancelados_removidos,
                         client_id
                     },
                     ip_address: req.ip,
@@ -2734,6 +2804,8 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                 inseridos,
                 ja_existiam,
                 full_skipped,
+                cancelados_skipped,
+                cancelados_removidos,
                 erros: erros.length > 0 ? erros : undefined
             }]);
         } else {
