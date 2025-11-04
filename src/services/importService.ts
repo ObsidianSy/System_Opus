@@ -658,6 +658,7 @@ export const importService = {
   // ===== FUNÇÕES PARA IMPORT FULL (com envio_num) =====
 
   async uploadFileFull(cliente: string, envioNum: string, file: File, importDate?: string, userEmail?: string, userName?: string): Promise<{
+    import_id?: string;
     envio_id: number;
     envio_num: string;
     linhas?: number;

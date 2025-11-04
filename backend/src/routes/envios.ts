@@ -547,6 +547,14 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
             const importId = batchResult.rows[0].import_id;
 
+            // Inicializar progresso
+            uploadProgress.set(importId, {
+                stage: 'processing',
+                current: 0,
+                total: jsonData.length,
+                message: 'Iniciando processamento...'
+            });
+
             // Calcular totais
             const totalQtd = jsonData.reduce((sum: number, row: any) => {
                 const qtd = parseFloat(
@@ -588,6 +596,14 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 [envioId]
             );
 
+            // Atualizar progresso - criação do envio
+            uploadProgress.set(importId, {
+                stage: 'inserting',
+                current: 0,
+                total: jsonData.length,
+                message: 'Inserindo linhas brutas...'
+            });
+
             // 3. INSERIR LINHAS BRUTAS (logistica.full_envio_raw)
             // Cada linha carrega envio_id E import_id para rastreabilidade
             let insertedRows = 0;
@@ -619,6 +635,16 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                             [envioId, i + 1, codigoMl, skuTexto, qtd, 'pending']
                         );
                         insertedRows++;
+
+                        // Atualizar progresso a cada 10 linhas
+                        if (insertedRows % 10 === 0 || i === jsonData.length - 1) {
+                            uploadProgress.set(importId, {
+                                stage: 'inserting',
+                                current: i + 1,
+                                total: jsonData.length,
+                                message: `Inserindo linhas: ${i + 1}/${jsonData.length}`
+                            });
+                        }
                     } catch (rowError: any) {
                         console.error(`Erro na linha ${i + 1}:`, rowError.message);
                         errors.push(`Linha ${i + 1}: ${rowError.message}`);
@@ -632,6 +658,14 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             let autoMatched = 0;
 
             if (insertedRows > 0) {
+                // Atualizar progresso - início do relacionamento
+                uploadProgress.set(importId, {
+                    stage: 'matching',
+                    current: 0,
+                    total: insertedRows,
+                    message: 'Auto-relacionando SKUs...'
+                });
+
                 // Buscar todas as linhas recém-inseridas
                 const pendingRows = await pool.query(
                     `SELECT id, codigo_ml, sku_texto, qtd 
@@ -640,7 +674,8 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     [envioId]
                 );
 
-                for (const row of pendingRows.rows) {
+                for (let idx = 0; idx < pendingRows.rows.length; idx++) {
+                    const row = pendingRows.rows[idx];
                     let matchedSku: string | null = null;
                     let matchSource: string = '';
 
@@ -726,6 +761,16 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                         );
 
                         autoMatched++;
+
+                        // Atualizar progresso a cada 5 itens
+                        if (autoMatched % 5 === 0 || idx === pendingRows.rows.length - 1) {
+                            uploadProgress.set(importId, {
+                                stage: 'matching',
+                                current: idx + 1,
+                                total: pendingRows.rows.length,
+                                message: `Auto-relacionando: ${autoMatched} de ${pendingRows.rows.length}`
+                            });
+                        }
                     }
                 }
 
@@ -765,6 +810,14 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                  WHERE import_id = $3`,
                 [insertedRows, finalStatus, importId]
             );
+
+            // Atualizar progresso - finalizado
+            uploadProgress.set(importId, {
+                stage: 'completed',
+                current: insertedRows,
+                total: jsonData.length,
+                message: `Concluído! ${autoMatched} relacionados, ${remainingPending} pendentes`
+            });
 
             // 7. ATUALIZAR STATUS DO ENVIO
             // Nota: A função normalizar já atualiza o status (draft se tem pendentes, ready se tudo ok)

@@ -74,10 +74,6 @@ export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: Im
     setUploadProgress(0);
 
     try {
-      const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => Math.min(prev + 10, 90));
-      }, 200);
-
       const response = await importService.uploadFileFull(
         selectedClient,
         envioNum,
@@ -87,8 +83,42 @@ export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: Im
         usuario?.nome || 'Usuário Sistema'
       );
 
-      clearInterval(progressInterval);
-      setUploadProgress(100);
+      // Se temos import_id, conectar ao SSE para progresso real
+      if (response.import_id) {
+        const eventSource = new EventSource(`/api/envios/upload-progress/${response.import_id}`);
+
+        eventSource.onmessage = (event) => {
+          try {
+            const progress = JSON.parse(event.data);
+            const percentage = progress.total > 0 
+              ? Math.round((progress.current / progress.total) * 100) 
+              : 0;
+            
+            setUploadProgress(percentage);
+
+            // Fechar conexão quando completar
+            if (progress.stage === 'completed' || progress.stage === 'error') {
+              eventSource.close();
+              setUploadProgress(100);
+            }
+          } catch (err) {
+            console.error('Erro ao processar progresso:', err);
+          }
+        };
+
+        eventSource.onerror = () => {
+          eventSource.close();
+          setUploadProgress(100);
+        };
+
+        // Timeout de segurança (2 minutos)
+        setTimeout(() => {
+          eventSource.close();
+        }, 120000);
+      } else {
+        // Fallback: progresso fake se não tiver import_id
+        setUploadProgress(100);
+      }
 
       const autoRelacionadas = response.auto_relacionadas || 0;
       const pendentes = response.pendentes || 0;
@@ -118,7 +148,6 @@ export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: Im
 
       // Limpa o form mas mantém o resultado visível
       setSelectedFile(null);
-      setUploadProgress(0);
       setIsUploading(false);
       setEnvioNum('');
     } catch (error: any) {
