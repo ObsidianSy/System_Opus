@@ -692,35 +692,84 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                         matchedSku = produtoResult.rows[0].sku;
                         matchSource = 'direct';
                     } else {
-                        // 2️⃣ SEGUNDO: Buscar em aliases (codigo_ml ou sku_texto) com normalização
-                        const aliasResult = await pool.query(
-                            `SELECT stock_sku, confidence_default, id 
-                             FROM obsidian.sku_aliases 
-                             WHERE client_id = $1 
-                               AND (
-                                   UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                        // 1.5️⃣ BUSCA FUZZY: Remover caracteres especiais e tentar novamente
+                        const fuzzyResult = await pool.query(
+                            `SELECT sku 
+                             FROM obsidian.produtos 
+                             WHERE UPPER(REGEXP_REPLACE(sku, '[^A-Z0-9]', '', 'g')) = 
+                                   UPPER(REGEXP_REPLACE($1, '[^A-Z0-9]', '', 'g'))
+                                OR UPPER(REGEXP_REPLACE(sku, '[^A-Z0-9]', '', 'g')) = 
                                    UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
-                                   OR 
-                                   UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
-                                   UPPER(REGEXP_REPLACE($3, '[^A-Z0-9]', '', 'g'))
-                               )
-                             ORDER BY confidence_default DESC, times_used DESC 
                              LIMIT 1`,
-                            [clientIdNum, row.codigo_ml, row.sku_texto]
+                            [row.codigo_ml, row.sku_texto]
                         );
 
-                        if (aliasResult.rows.length > 0) {
-                            matchedSku = aliasResult.rows[0].stock_sku;
-                            matchSource = 'alias';
-
-                            // Atualizar contador de uso do alias
-                            await pool.query(
-                                `UPDATE obsidian.sku_aliases 
-                                 SET times_used = times_used + 1, 
-                                     last_used_at = NOW() 
-                                 WHERE id = $1`,
-                                [aliasResult.rows[0].id]
+                        if (fuzzyResult.rows.length > 0) {
+                            matchedSku = fuzzyResult.rows[0].sku;
+                            matchSource = 'fuzzy';
+                        } else {
+                            // 1.6️⃣ BUSCA INTELIGENTE: Size variation matching (37/38 → 38)
+                            // Separa base (até última letra) e tamanho (últimos números)
+                            // Verifica se o tamanho buscado contém o tamanho do DB
+                            const smartResult = await pool.query(
+                                `WITH normalized AS (
+                                    SELECT 
+                                        sku,
+                                        REGEXP_REPLACE(UPPER(sku), '[^A-Z0-9]', '', 'g') as sku_norm,
+                                        SUBSTRING(REGEXP_REPLACE(UPPER(sku), '[^A-Z0-9]', '', 'g') FROM '^[A-Z0-9]*[A-Z]') as sku_base,
+                                        SUBSTRING(REGEXP_REPLACE(UPPER(sku), '[^A-Z0-9]', '', 'g') FROM '[0-9]+$') as sku_size
+                                    FROM obsidian.produtos
+                                ),
+                                search_parts AS (
+                                    SELECT 
+                                        REGEXP_REPLACE(UPPER($1), '[^A-Z0-9]', '', 'g') as search_norm,
+                                        SUBSTRING(REGEXP_REPLACE(UPPER($1), '[^A-Z0-9]', '', 'g') FROM '^[A-Z0-9]*[A-Z]') as search_base,
+                                        SUBSTRING(REGEXP_REPLACE(UPPER($1), '[^A-Z0-9]', '', 'g') FROM '[0-9]+$') as search_size
+                                )
+                                SELECT n.sku
+                                FROM normalized n, search_parts s
+                                WHERE n.sku_base = s.search_base
+                                  AND s.search_size LIKE '%' || n.sku_size || '%'
+                                ORDER BY LENGTH(n.sku_size) DESC
+                                LIMIT 1`,
+                                [row.codigo_ml || row.sku_texto]
                             );
+
+                            if (smartResult.rows.length > 0) {
+                                matchedSku = smartResult.rows[0].sku;
+                                matchSource = 'smart';
+                            } else {
+                                // 2️⃣ SEGUNDO: Buscar em aliases (codigo_ml ou sku_texto) com normalização
+                                const aliasResult = await pool.query(
+                                    `SELECT stock_sku, confidence_default, id 
+                                     FROM obsidian.sku_aliases 
+                                     WHERE client_id = $1 
+                                       AND (
+                                           UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                           UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
+                                           OR 
+                                           UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                           UPPER(REGEXP_REPLACE($3, '[^A-Z0-9]', '', 'g'))
+                                       )
+                                     ORDER BY confidence_default DESC, times_used DESC 
+                                     LIMIT 1`,
+                                    [clientIdNum, row.codigo_ml, row.sku_texto]
+                                );
+
+                                if (aliasResult.rows.length > 0) {
+                                    matchedSku = aliasResult.rows[0].stock_sku;
+                                    matchSource = 'alias';
+
+                                    // Atualizar contador de uso do alias
+                                    await pool.query(
+                                        `UPDATE obsidian.sku_aliases 
+                                         SET times_used = times_used + 1, 
+                                             last_used_at = NOW() 
+                                         WHERE id = $1`,
+                                        [aliasResult.rows[0].id]
+                                    );
+                                }
+                            }
                         }
                     }
 
@@ -1286,35 +1335,82 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                             matchedSku = produtoResult.rows[0].sku;
                             matchSource = 'direct';
                         } else {
-                            // 2️⃣ SEGUNDO: Buscar em aliases com normalização (sku_text ou sku_armazem)
-                            const aliasResult = await pool.query(
-                                `SELECT stock_sku, confidence_default, id 
-                                 FROM obsidian.sku_aliases 
-                                 WHERE client_id = $1 
-                                   AND (
-                                       UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
-                                           UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
-                                       OR 
-                                       UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
-                                           UPPER(REGEXP_REPLACE($3, '[^A-Z0-9]', '', 'g'))
-                                   )
-                                 ORDER BY confidence_default DESC, times_used DESC 
+                            // 1.5️⃣ BUSCA FUZZY: Remover caracteres especiais e tentar novamente
+                            const fuzzyResult = await pool.query(
+                                `SELECT sku 
+                                 FROM obsidian.produtos 
+                                 WHERE UPPER(REGEXP_REPLACE(sku, '[^A-Z0-9]', '', 'g')) = 
+                                       UPPER(REGEXP_REPLACE($1, '[^A-Z0-9]', '', 'g'))
+                                    OR UPPER(REGEXP_REPLACE(sku, '[^A-Z0-9]', '', 'g')) = 
+                                       UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
                                  LIMIT 1`,
-                                [clientIdNum, row.sku_text, row.sku_armazem]
+                                [row.sku_text, row.sku_armazem]
                             );
 
-                            if (aliasResult.rows.length > 0) {
-                                matchedSku = aliasResult.rows[0].stock_sku;
-                                matchSource = 'alias';
-
-                                // Atualizar contador de uso do alias
-                                await pool.query(
-                                    `UPDATE obsidian.sku_aliases 
-                                     SET times_used = times_used + 1, 
-                                         last_used_at = NOW() 
-                                     WHERE id = $1`,
-                                    [aliasResult.rows[0].id]
+                            if (fuzzyResult.rows.length > 0) {
+                                matchedSku = fuzzyResult.rows[0].sku;
+                                matchSource = 'fuzzy';
+                            } else {
+                                // 1.6️⃣ BUSCA INTELIGENTE: Size variation matching (37/38 → 38)
+                                const smartResult = await pool.query(
+                                    `WITH normalized AS (
+                                        SELECT 
+                                            sku,
+                                            REGEXP_REPLACE(UPPER(sku), '[^A-Z0-9]', '', 'g') as sku_norm,
+                                            SUBSTRING(REGEXP_REPLACE(UPPER(sku), '[^A-Z0-9]', '', 'g') FROM '^[A-Z0-9]*[A-Z]') as sku_base,
+                                            SUBSTRING(REGEXP_REPLACE(UPPER(sku), '[^A-Z0-9]', '', 'g') FROM '[0-9]+$') as sku_size
+                                        FROM obsidian.produtos
+                                    ),
+                                    search_parts AS (
+                                        SELECT 
+                                            REGEXP_REPLACE(UPPER($1), '[^A-Z0-9]', '', 'g') as search_norm,
+                                            SUBSTRING(REGEXP_REPLACE(UPPER($1), '[^A-Z0-9]', '', 'g') FROM '^[A-Z0-9]*[A-Z]') as search_base,
+                                            SUBSTRING(REGEXP_REPLACE(UPPER($1), '[^A-Z0-9]', '', 'g') FROM '[0-9]+$') as search_size
+                                    )
+                                    SELECT n.sku
+                                    FROM normalized n, search_parts s
+                                    WHERE n.sku_base = s.search_base
+                                      AND s.search_size LIKE '%' || n.sku_size || '%'
+                                    ORDER BY LENGTH(n.sku_size) DESC
+                                    LIMIT 1`,
+                                    [row.sku_text || row.sku_armazem]
                                 );
+
+                                if (smartResult.rows.length > 0) {
+                                    matchedSku = smartResult.rows[0].sku;
+                                    matchSource = 'smart';
+                                } else {
+                                    // 2️⃣ BUSCAR EM ALIASES com normalização (sku_text ou sku_armazem)
+                                    const aliasResult = await pool.query(
+                                        `SELECT stock_sku, confidence_default, id 
+                                         FROM obsidian.sku_aliases 
+                                         WHERE client_id = $1 
+                                           AND (
+                                               UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                                   UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
+                                               OR 
+                                               UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                                   UPPER(REGEXP_REPLACE($3, '[^A-Z0-9]', '', 'g'))
+                                           )
+                                         ORDER BY confidence_default DESC, times_used DESC 
+                                         LIMIT 1`,
+                                        [clientIdNum, row.sku_text, row.sku_armazem]
+                                    );
+
+                                    if (aliasResult.rows.length > 0) {
+                                        matchedSku = aliasResult.rows[0].stock_sku;
+                                        matchSource = 'alias';
+
+                                        // Atualizar contador de uso do alias
+                                        await pool.query(
+                                            `UPDATE obsidian.sku_aliases 
+                                             SET times_used = times_used + 1, 
+                                                 last_used_at = NOW() 
+                                             WHERE id = $1`,
+                                            [aliasResult.rows[0].id]
+                                        );
+                                    }
+                                }
                             }
                         }
 
@@ -2483,7 +2579,7 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
 
             const envio = envioResult.rows[0];
 
-            // Verificar se há itens pendentes
+            // Contar itens pendentes (apenas para informar, não bloquear)
             const pendingCheck = await pool.query(
                 `SELECT COUNT(*) as count 
                  FROM logistica.full_envio_raw 
@@ -2491,21 +2587,19 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                 [envio_id]
             );
 
-            if (parseInt(pendingCheck.rows[0].count) > 0) {
-                return res.status(400).json({
-                    error: 'Existem itens pendentes de relacionamento. Relacione todos os SKUs antes de emitir.'
-                });
-            }
+            const pendingCount = parseInt(pendingCheck.rows[0].count);
 
-            // Contar itens que serão emitidos
+            // Contar itens que serão emitidos (apenas os relacionados)
             const itemCount = await pool.query(
                 `SELECT COUNT(*) as count FROM logistica.full_envio_item WHERE envio_id = $1`,
                 [envio_id]
             );
 
-            if (parseInt(itemCount.rows[0].count) === 0) {
+            const emittedCount = parseInt(itemCount.rows[0].count);
+
+            if (emittedCount === 0) {
                 return res.status(400).json({
-                    error: 'Nenhum item encontrado para emitir. Execute a normalização primeiro.'
+                    error: 'Nenhum item relacionado para emitir. Relacione pelo menos um SKU antes de emitir.'
                 });
             }
 
@@ -2555,7 +2649,8 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                     details: {
                         source: 'FULL',
                         envio_num: envio.envio_num,
-                        total_items: parseInt(itemCount.rows[0].count),
+                        items_emitted: emittedCount,
+                        items_pending: pendingCount,
                         cliente: envio.cliente_nome,
                         data_emissao
                     },
@@ -2568,9 +2663,12 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
 
             res.json({
                 success: true,
-                message: 'Vendas emitidas com sucesso',
+                message: pendingCount > 0
+                    ? `Vendas emitidas com sucesso. ${emittedCount} itens emitidos, ${pendingCount} itens ainda pendentes de relacionamento.`
+                    : 'Vendas emitidas com sucesso',
                 envio_num: envio.envio_num,
-                items_count: parseInt(itemCount.rows[0].count),
+                items_emitted: emittedCount,
+                items_pending: pendingCount,
                 data_emissao
             });
         } else if (source === 'ML') {

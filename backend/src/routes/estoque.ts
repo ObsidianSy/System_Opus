@@ -91,23 +91,41 @@ estoqueRouter.post('/', async (req: Request, res: Response) => {
 
         await client.query('BEGIN');
 
-        // Insere produto
+        // Determinar se é kit baseado em componentes OU tipo_produto
+        const isKit = (componentes && componentes.length > 0) || tipo_produto === 'KIT';
+
+        // Insere produto (com is_kit)
         const produtoResult = await client.query(
-            `INSERT INTO obsidian.produtos (sku, nome, categoria, tipo_produto, quantidade_atual, unidade_medida, preco_unitario)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+            `INSERT INTO obsidian.produtos (sku, nome, categoria, tipo_produto, quantidade_atual, unidade_medida, preco_unitario, is_kit)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-            [sku, nome_produto, categoria, tipo_produto, quantidade_atual || 0, unidade_medida, preco_unitario || 0]
+            [sku, nome_produto, categoria, tipo_produto, quantidade_atual || 0, unidade_medida, preco_unitario || 0, isKit]
         );
 
         // Insere componentes se for kit
         if (componentes && componentes.length > 0) {
             for (const comp of componentes) {
+                // Verificar se componente existe
+                const componenteExists = await client.query(
+                    'SELECT sku FROM obsidian.produtos WHERE sku = $1',
+                    [comp.sku_componente]
+                );
+
+                if (componenteExists.rows.length === 0) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ 
+                        error: `Componente ${comp.sku_componente} não existe no estoque. Cadastre-o primeiro.` 
+                    });
+                }
+
                 await client.query(
                     `INSERT INTO obsidian.kit_components (kit_sku, component_sku, qty)
            VALUES ($1, $2, $3)`,
                     [sku, comp.sku_componente, comp.quantidade_por_kit]
                 );
             }
+
+            console.log(`✅ Kit ${sku} criado com ${componentes.length} componentes`);
         }
 
         await client.query('COMMIT');
@@ -119,7 +137,7 @@ estoqueRouter.post('/', async (req: Request, res: Response) => {
         if (error.code === '23505') {
             return res.status(409).json({ error: 'Produto já existe' });
         }
-        res.status(500).json({ error: 'Erro ao criar produto' });
+        res.status(500).json({ error: 'Erro ao criar produto', details: error.message });
     } finally {
         client.release();
     }
@@ -135,10 +153,13 @@ estoqueRouter.put('/:sku', async (req: Request, res: Response) => {
 
         await client.query('BEGIN');
 
-        // Upsert produto
+        // Determinar se é kit baseado em componentes OU tipo_produto
+        const isKit = (componentes && componentes.length > 0) || tipo_produto === 'KIT';
+
+        // Upsert produto (com is_kit)
         const produtoResult = await client.query(
-            `INSERT INTO obsidian.produtos (sku, nome, categoria, tipo_produto, quantidade_atual, unidade_medida, preco_unitario)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+            `INSERT INTO obsidian.produtos (sku, nome, categoria, tipo_produto, quantidade_atual, unidade_medida, preco_unitario, is_kit)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (sku) 
        DO UPDATE SET 
          nome = EXCLUDED.nome,
@@ -146,33 +167,52 @@ estoqueRouter.put('/:sku', async (req: Request, res: Response) => {
          tipo_produto = EXCLUDED.tipo_produto,
          quantidade_atual = EXCLUDED.quantidade_atual,
          unidade_medida = EXCLUDED.unidade_medida,
-         preco_unitario = EXCLUDED.preco_unitario
+         preco_unitario = EXCLUDED.preco_unitario,
+         is_kit = EXCLUDED.is_kit,
+         atualizado_em = NOW()
        RETURNING *`,
-            [sku, nome_produto, categoria, tipo_produto, quantidade_atual, unidade_medida, preco_unitario]
+            [sku, nome_produto, categoria, tipo_produto, quantidade_atual, unidade_medida, preco_unitario, isKit]
         );
 
         // Atualiza componentes
-        if (componentes) {
+        if (componentes !== undefined) {
             // Remove componentes antigos
             await client.query('DELETE FROM obsidian.kit_components WHERE kit_sku = $1', [sku]);
 
             // Insere novos componentes
-            for (const comp of componentes) {
-                await client.query(
-                    `INSERT INTO obsidian.kit_components (kit_sku, component_sku, qty)
+            if (componentes.length > 0) {
+                for (const comp of componentes) {
+                    // Verificar se componente existe
+                    const componenteExists = await client.query(
+                        'SELECT sku FROM obsidian.produtos WHERE sku = $1',
+                        [comp.sku_componente]
+                    );
+
+                    if (componenteExists.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({ 
+                            error: `Componente ${comp.sku_componente} não existe no estoque. Cadastre-o primeiro.` 
+                        });
+                    }
+
+                    await client.query(
+                        `INSERT INTO obsidian.kit_components (kit_sku, component_sku, qty)
            VALUES ($1, $2, $3)`,
-                    [sku, comp.sku_componente, comp.quantidade_por_kit]
-                );
+                        [sku, comp.sku_componente, comp.quantidade_por_kit]
+                    );
+                }
+
+                console.log(`✅ Kit ${sku} atualizado com ${componentes.length} componentes`);
             }
         }
 
         await client.query('COMMIT');
 
         res.json(produtoResult.rows[0]);
-    } catch (error) {
+    } catch (error: any) {
         await client.query('ROLLBACK');
         console.error('Erro ao atualizar produto:', error);
-        res.status(500).json({ error: 'Erro ao atualizar produto' });
+        res.status(500).json({ error: 'Erro ao atualizar produto', details: error.message });
     } finally {
         client.release();
     }
