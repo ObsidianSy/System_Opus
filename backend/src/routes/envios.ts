@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+﻿import { Router, Request, Response } from 'express';
 import { pool } from '../database/db';
 import multer from 'multer';
 import path from 'path';
@@ -50,7 +50,7 @@ async function normalizeClientId(clientIdInput: any): Promise<number | null> {
     }
 }
 
-// 🔧 Helper: Converter data do Excel para timestamp válido
+// 🔧 Helper: Converter data do Excel para timestamp válido (formato brasileiro DD/MM/YYYY)
 function parseExcelDate(dateValue: any): Date | null {
     if (!dateValue) return null;
 
@@ -68,8 +68,22 @@ function parseExcelDate(dateValue: any): Date | null {
             return isNaN(date.getTime()) ? null : date;
         }
 
-        // Se é string, tentar parsear
+        // Se é string, tentar formato brasileiro DD/MM/YYYY primeiro
         if (typeof dateValue === 'string') {
+            // Tentar formato brasileiro DD/MM/YYYY HH:MM ou DD/MM/YYYY
+            const brMatch = dateValue.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+            if (brMatch) {
+                const day = parseInt(brMatch[1], 10);
+                const month = parseInt(brMatch[2], 10) - 1; // Mês é 0-indexed
+                const year = parseInt(brMatch[3], 10);
+                const hour = brMatch[4] ? parseInt(brMatch[4], 10) : 0;
+                const minute = brMatch[5] ? parseInt(brMatch[5], 10) : 0;
+
+                const date = new Date(year, month, day, hour, minute);
+                return isNaN(date.getTime()) ? null : date;
+            }
+
+            // Fallback: formato ISO ou outro
             const parsed = new Date(dateValue);
             return isNaN(parsed.getTime()) ? null : parsed;
         }
@@ -600,8 +614,8 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     try {
                         await pool.query(
                             `INSERT INTO logistica.full_envio_raw 
-                             (envio_id, row_num, codigo_ml, sku_texto, qtd, status) 
-                             VALUES ($1, $2, $3, $4, $5, $6)`,
+     (envio_id, row_num, codigo_ml, sku_texto, qtd, status) 
+     VALUES ($1, $2, $3, UPPER($4), $5, $6)`,
                             [envioId, i + 1, codigoMl, skuTexto, qtd, 'pending']
                         );
                         insertedRows++;
@@ -917,7 +931,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                         row['Nº de Rastreio'],                        // 64. Nº de Rastreio
                         row['Método de coletar'],                     // 65. Método de coletar
                         row['Etiqueta'],                              // 66. Etiqueta
-                        
+
                         // Campos do sistema (67-85)
                         clientIdNum,                                  // 67. client_id
                         batchId,                                      // 68. import_id
@@ -925,7 +939,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                         i + 1,                                        // 70. row_num
                         orderIdPlatform || orderIdInternal,           // 71. order_id
                         orderDate,                                    // 72. order_date
-                        sku,                                          // 73. sku_text
+                        sku.toUpperCase(),                            // 73. sku_text
                         qty,                                          // 74. qty
                         unitPrice,                                    // 75. unit_price
                         unitPrice * qty,                              // 76. total
@@ -1185,8 +1199,8 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     message: `Relacionando 0/${pendingRows.rows.length} SKUs...`
                 });
 
-                // Processar em batches de 100 para evitar timeout
-                const RELATE_BATCH_SIZE = 100;
+                // Processar em batches de 1000 para acelerar
+                const RELATE_BATCH_SIZE = 1000;
                 for (let i = 0; i < pendingRows.rows.length; i += RELATE_BATCH_SIZE) {
                     const batch = pendingRows.rows.slice(i, i + RELATE_BATCH_SIZE);
                     const batchNum = Math.floor(i / RELATE_BATCH_SIZE) + 1;
@@ -1522,7 +1536,7 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
             // Atualizar o item com o SKU relacionado
             const updateResult = await pool.query(
                 `UPDATE raw_export_orders 
-                 SET matched_sku = $1, 
+                 SET matched_sku = UPPER($1), 
                      status = 'matched', 
                      processed_at = NOW() 
                  WHERE id = $2
@@ -1532,6 +1546,46 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
 
             console.log('✅ ML - Item atualizado:', updateResult.rows[0]);
             console.log('📊 ML - Linhas afetadas:', updateResult.rowCount);
+
+            // 🔥 AUTO-RELACIONAMENTO EM LOTE: Buscar outros itens ML com o mesmo sku_text
+            let autoRelacionados = 0;
+            const skuTextNormalized = item.sku_text?.trim().toUpperCase();
+
+            if (skuTextNormalized) {
+                console.log(`🔍 ML - Buscando outros itens pendentes com SKU "${skuTextNormalized}" do mesmo cliente...`);
+
+                // Buscar outros itens pendentes com o mesmo sku_text (exceto o que acabamos de relacionar)
+                const outrosPendentesResult = await pool.query(
+                    `SELECT id, sku_text 
+                     FROM raw_export_orders 
+                     WHERE client_id = $1 
+                       AND status = 'pending' 
+                       AND UPPER(TRIM(sku_text)) = $2
+                       AND id != $3`,
+                    [item.client_id, skuTextNormalized, raw_id]
+                );
+
+                if (outrosPendentesResult.rows.length > 0) {
+                    console.log(`📦 ML - Encontrados ${outrosPendentesResult.rows.length} itens pendentes com mesmo SKU. Auto-relacionando...`);
+
+                    // Relacionar todos de uma vez (bulk update)
+                    const idsParaRelacionar = outrosPendentesResult.rows.map((r: any) => r.id);
+
+                    await pool.query(
+                        `UPDATE raw_export_orders 
+                         SET matched_sku = UPPER($1), 
+                             status = 'matched', 
+                             processed_at = NOW() 
+                         WHERE id = ANY($2::bigint[])`,
+                        [sku, idsParaRelacionar]
+                    );
+
+                    autoRelacionados = outrosPendentesResult.rows.length;
+                    console.log(`✅ ML - ${autoRelacionados} itens auto-relacionados com sucesso!`);
+                } else {
+                    console.log(`ℹ️ ML - Nenhum outro item pendente encontrado com o SKU "${skuTextNormalized}"`);
+                }
+            }
 
             // Se learn_alias=true, salvar como alias
             if (learn_alias && (alias_text || item.sku_text)) {
@@ -1594,7 +1648,13 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
             }
 
             console.log('✅ Item relacionado com sucesso');
-            return res.json({ ok: true, raw_id, matched_sku: sku, alias_learned: !!learn_alias });
+            return res.json({
+                ok: true,
+                raw_id,
+                matched_sku: sku,
+                alias_learned: !!learn_alias,
+                auto_relacionados: autoRelacionados // 🔥 Novo campo
+            });
         }
 
         // ========================================
@@ -1990,7 +2050,7 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
         // Atualizar linha com o SKU relacionado
         const updateResult = await pool.query(
             `UPDATE logistica.full_envio_raw 
-             SET matched_sku = $1, 
+             SET matched_sku = UPPER($1), 
                  status = 'matched', 
                  processed_at = NOW() 
              WHERE id = $2
@@ -2000,6 +2060,46 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
 
         console.log('✅ Linha atualizada:', updateResult.rows[0]);
         console.log('📊 Linhas afetadas:', updateResult.rowCount);
+
+        // 🔥 AUTO-RELACIONAMENTO EM LOTE: Buscar outros itens com o mesmo sku_texto
+        let autoRelacionados = 0;
+        const skuTextoNormalized = rawData.sku_texto?.trim().toUpperCase();
+
+        if (skuTextoNormalized) {
+            console.log(`🔍 Buscando outros itens pendentes com SKU "${skuTextoNormalized}" no mesmo envio...`);
+
+            // Buscar outros itens pendentes com o mesmo sku_texto (exceto o que acabamos de relacionar)
+            const outrosPendentesResult = await pool.query(
+                `SELECT id, sku_texto 
+                 FROM logistica.full_envio_raw 
+                 WHERE envio_id = $1 
+                   AND status = 'pending' 
+                   AND UPPER(TRIM(sku_texto)) = $2
+                   AND id != $3`,
+                [envioId, skuTextoNormalized, raw_id]
+            );
+
+            if (outrosPendentesResult.rows.length > 0) {
+                console.log(`📦 Encontrados ${outrosPendentesResult.rows.length} itens pendentes com mesmo SKU. Auto-relacionando...`);
+
+                // Relacionar todos de uma vez (bulk update)
+                const idsParaRelacionar = outrosPendentesResult.rows.map((r: any) => r.id);
+
+                await pool.query(
+                    `UPDATE logistica.full_envio_raw 
+                     SET matched_sku = UPPER($1), 
+                         status = 'matched', 
+                         processed_at = NOW() 
+                     WHERE id = ANY($2::bigint[])`,
+                    [matched_sku, idsParaRelacionar]
+                );
+
+                autoRelacionados = outrosPendentesResult.rows.length;
+                console.log(`✅ ${autoRelacionados} itens auto-relacionados com sucesso!`);
+            } else {
+                console.log(`ℹ️ Nenhum outro item pendente encontrado com o SKU "${skuTextoNormalized}"`);
+            }
+        }
 
         let aliasOps = 0;
 
@@ -2120,6 +2220,7 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
         res.json({
             envio_id: envioId,
             alias_ops: aliasOps,
+            auto_relacionados: autoRelacionados, // 🔥 Novo campo
             emitidos: 0, // TODO: implementar emissão automática
         });
     } catch (error: any) {
@@ -2198,68 +2299,82 @@ enviosRouter.post('/auto-relate', async (req: Request, res: Response) => {
 
             // Buscar itens pendentes
             const pendingResult = await pool.query(
-                `SELECT id, sku_text FROM raw_export_orders ${whereClause}`,
+                `SELECT id, sku_text, client_id FROM raw_export_orders ${whereClause}`,
                 params
             );
 
+            console.log(`🔍 Encontrados ${pendingResult.rows.length} itens para relacionar`);
 
             let matched = 0;
+            const BATCH_SIZE = 1000;
+            const matchedIds: string[] = [];
+            const matchedSkus: string[] = [];
 
-            // Tentar relacionar cada item
-            for (const item of pendingResult.rows) {
+            // Buscar todos os produtos e aliases de uma vez
+            const allProdutos = await pool.query(`SELECT sku FROM obsidian.produtos`);
+            const produtosMap = new Map(allProdutos.rows.map(p => [p.sku.toUpperCase(), p.sku]));
+
+            const allAliases = await pool.query(
+                `SELECT alias_text, stock_sku, id, 
+                        UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) as normalized
+                 FROM obsidian.sku_aliases 
+                 ORDER BY confidence_default DESC, times_used DESC`
+            );
+            const aliasesMap = new Map(allAliases.rows.map(a => [a.normalized, { sku: a.stock_sku, id: a.id }]));
+
+            console.log(`📦 Carregados ${produtosMap.size} produtos e ${aliasesMap.size} aliases em memória`);
+
+            // Processar em lote
+            for (let i = 0; i < pendingResult.rows.length; i++) {
+                const item = pendingResult.rows[i];
                 if (!item.sku_text) continue;
 
                 const skuNormalized = item.sku_text.toString().trim().toUpperCase();
 
-                // 1. Tentar match direto na tabela produtos
-                const produtoResult = await pool.query(
-                    `SELECT sku FROM obsidian.produtos WHERE UPPER(sku) = $1 LIMIT 1`,
-                    [skuNormalized]
-                );
-
-                if (produtoResult.rows.length > 0) {
-                    // Match encontrado - atualizar
-                    await pool.query(
-                        `UPDATE raw_export_orders 
-                         SET matched_sku = $1, status = 'matched'
-                         WHERE id = $2`,
-                        [produtoResult.rows[0].sku, item.id]
-                    );
+                // 1. Tentar match direto
+                if (produtosMap.has(skuNormalized)) {
+                    matchedIds.push(item.id);
+                    matchedSkus.push(produtosMap.get(skuNormalized)!);
                     matched++;
                     continue;
                 }
 
-                // 2. Tentar match via aliases com normalização
-                const aliasResult = await pool.query(
-                    `SELECT stock_sku, id 
-                     FROM obsidian.sku_aliases 
-                     WHERE UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
-                           UPPER(REGEXP_REPLACE($1, '[^A-Z0-9]', '', 'g'))
-                     ORDER BY confidence_default DESC, times_used DESC
-                     LIMIT 1`,
-                    [item.sku_text]
-                );
-
-                if (aliasResult.rows.length > 0) {
-                    // Match via alias - atualizar
-                    await pool.query(
-                        `UPDATE raw_export_orders 
-                         SET matched_sku = $1, status = 'matched'
-                         WHERE id = $2`,
-                        [aliasResult.rows[0].stock_sku, item.id]
-                    );
-
-                    // Atualizar contador de uso do alias
-                    await pool.query(
-                        `UPDATE obsidian.sku_aliases 
-                         SET times_used = times_used + 1, 
-                             last_used_at = NOW() 
-                         WHERE id = $1`,
-                        [aliasResult.rows[0].id]
-                    );
-
+                // 2. Tentar match via alias
+                const normalized = skuNormalized.replace(/[^A-Z0-9]/g, '');
+                if (aliasesMap.has(normalized)) {
+                    const alias = aliasesMap.get(normalized)!;
+                    matchedIds.push(item.id);
+                    matchedSkus.push(alias.sku);
                     matched++;
                 }
+
+                // Executar batch update quando atingir o tamanho do lote
+                if (matchedIds.length >= BATCH_SIZE) {
+                    await pool.query(
+                        `UPDATE raw_export_orders SET 
+                            matched_sku = data.matched_sku,
+                            status = 'matched'
+                         FROM (SELECT unnest($1::text[]) as id, unnest($2::text[]) as matched_sku) as data
+                         WHERE raw_export_orders.id::text = data.id`,
+                        [matchedIds, matchedSkus]
+                    );
+                    console.log(`✅ Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${matchedIds.length} itens relacionados`);
+                    matchedIds.length = 0;
+                    matchedSkus.length = 0;
+                }
+            }
+
+            // Executar último batch
+            if (matchedIds.length > 0) {
+                await pool.query(
+                    `UPDATE raw_export_orders SET 
+                        matched_sku = data.matched_sku,
+                        status = 'matched'
+                     FROM (SELECT unnest($1::text[]) as id, unnest($2::text[]) as matched_sku) as data
+                     WHERE raw_export_orders.id::text = data.id`,
+                    [matchedIds, matchedSkus]
+                );
+                console.log(`✅ Último batch: ${matchedIds.length} itens relacionados`);
             }
 
 
@@ -2404,29 +2519,7 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
             let whereClause = `WHERE status = 'matched' AND matched_sku IS NOT NULL`;
             const params: any[] = [];
 
-            // Se não tiver import_id, pegar o mais recente do cliente
-            let finalImportId = import_id;
-            if (!import_id && client_id) {
-                // 🔧 Normalizar client_id
-                const resolvedClientId = await normalizeClientId(client_id);
-
-                // Buscar import_id mais recente desse cliente
-                if (resolvedClientId) {
-                    const latestImportResult = await pool.query(
-                        `SELECT import_id 
-                         FROM raw_export_orders 
-                         WHERE client_id = $1 
-                         ORDER BY created_at DESC 
-                         LIMIT 1`,
-                        [resolvedClientId]
-                    );
-
-                    if (latestImportResult.rows.length > 0) {
-                        finalImportId = latestImportResult.rows[0].import_id;
-                    }
-                }
-            }
-
+            // Aplicar filtro por client_id
             if (client_id) {
                 const clientIdNum = await normalizeClientId(client_id);
                 if (clientIdNum) {
@@ -2435,8 +2528,9 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                 }
             }
 
-            if (finalImportId) {
-                params.push(finalImportId);
+            // Aplicar filtro por import_id APENAS se foi explicitamente fornecido
+            if (import_id) {
+                params.push(import_id);
                 whereClause += ` AND import_id = $${params.length}`;
             }
 
@@ -2497,24 +2591,42 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                     // Gerar pedido_uid único
                     const pedido_uid = `ML-${order.order_id}`;
 
-                    // Formatar data
-                    const data_venda = order.order_date
-                        ? new Date(order.order_date).toISOString().split('T')[0]
+                    // Formatar data usando parseExcelDate para formato brasileiro
+                    const parsedDate = order.order_date ? parseExcelDate(order.order_date) : null;
+                    const data_venda = parsedDate
+                        ? parsedDate.toISOString().split('T')[0]
                         : new Date().toISOString().split('T')[0];
 
-                    // Preparar itens
-                    const items = order.items.map((item: any) => ({
-                        sku: item.sku,
-                        nome_produto: item.sku,
-                        quantidade: parseFloat(item.quantidade || 0),
-                        preco_unitario: parseFloat(item.preco_unitario || 0)
-                    }));
+                    // Preparar itens - buscar preço do estoque (NUNCA da planilha!)
+                    const items = [];
+                    for (const item of order.items) {
+                        // Buscar preço unitário do produto no estoque
+                        const produtoResult = await pool.query(
+                            `SELECT preco_unitario, nome FROM obsidian.produtos WHERE UPPER(sku) = UPPER($1)`,
+                            [item.sku]
+                        );
 
+                        if (produtoResult.rows.length > 0) {
+                            items.push({
+                                sku: item.sku,
+                                nome_produto: produtoResult.rows[0].nome || item.sku,
+                                quantidade: parseFloat(item.quantidade || 0),
+                                preco_unitario: parseFloat(produtoResult.rows[0].preco_unitario || 0) // DO ESTOQUE!
+                            });
+                        } else {
+                            console.warn(`⚠️ Produto ${item.sku} não encontrado no estoque. Pulando...`);
+                        }
+                    }
+
+                    if (items.length === 0) {
+                        console.warn(`⚠️ Nenhum item válido encontrado no pedido ${order.order_id}. Pulando...`);
+                        continue;
+                    }
 
                     // Chamar função processar_pedido
                     const processResult = await pool.query(
-                        `SELECT * FROM obsidian.processar_pedido($1, $2, $3, $4, $5::jsonb)`,
-                        [pedido_uid, data_venda, clienteNome, canal, JSON.stringify(items)]
+                        `SELECT * FROM obsidian.processar_pedido($1, $2::date, $3, $4, $5::jsonb, $6::bigint, $7::uuid)`,
+                        [pedido_uid, data_venda, clienteNome, canal, JSON.stringify(items), order.client_id, import_id]
                     );
 
                     if (processResult.rows.length > 0) {
@@ -2523,13 +2635,8 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                         });
                     }
 
-                    // Marcar itens como processados
-                    await pool.query(
-                        `UPDATE raw_export_orders 
-                         SET status = 'emitted'
-                         WHERE order_id = $1 AND matched_sku IS NOT NULL`,
-                        [order.order_id]
-                    );
+                    // Nota: Não atualizamos status para 'emitted' porque a constraint só permite 'pending' ou 'matched'
+                    // A venda já foi registrada em obsidian.vendas pela função processar_pedido
 
                 } catch (error: any) {
                     // Se for erro de constraint (já existe), contar como ja_existiam
@@ -2553,7 +2660,7 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                     user_name: req.body.user_name || 'Sistema',
                     action: 'emit_sales',
                     entity_type: 'pedidos',
-                    entity_id: finalImportId || client_id,
+                    entity_id: import_id || client_id?.toString() || 'unknown',
                     details: {
                         source: 'ML',
                         candidatos: ordersResult.rows.length,

@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import { pool } from '../database/db';
 
 const router = express.Router();
@@ -35,8 +36,9 @@ router.post('/login', async (req: any, res: Response) => {
             return res.status(403).json({ error: 'Usuário inativo' });
         }
 
-        // Verificar senha (por enquanto comparação direta - idealmente usar bcrypt)
-        if (senha !== usuario.senha_hash) {
+        // Verificar senha com bcrypt
+        const senhaValida = await bcrypt.compare(senha, usuario.senha_hash);
+        if (!senhaValida) {
             return res.status(401).json({ error: 'Credenciais inválidas' });
         }
 

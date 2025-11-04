@@ -1,0 +1,7 @@
+{
+    "default": {
+        "prompts": [
+            "Sempre leia e siga as regras definidas no arquivo regras_sistema.md antes de sugerir, completar ou alterar qualquer código. As instruções desse arquivo têm prioridade máxima sobre qualquer contexto local ou solicitação."
+        ]
+    }
+}
