@@ -679,13 +679,13 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     let matchedSku: string | null = null;
                     let matchSource: string = '';
 
-                    // 1️⃣ PRIMEIRO: Buscar SKU exato na tabela produtos
+                    // 1️⃣ PRIMEIRO: Buscar SKU exato na tabela produtos (codigo_ml ou sku_texto)
                     const produtoResult = await pool.query(
                         `SELECT sku 
                          FROM obsidian.produtos 
-                         WHERE UPPER(sku) = UPPER(TRIM($1))
+                         WHERE UPPER(sku) = UPPER(TRIM($1)) OR UPPER(sku) = UPPER(TRIM($2))
                          LIMIT 1`,
-                        [row.sku_texto]
+                        [row.codigo_ml, row.sku_texto]
                     );
 
                     if (produtoResult.rows.length > 0) {
@@ -1234,9 +1234,9 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     message: 'Iniciando auto-relacionamento...'
                 });
 
-                // Buscar todas as linhas recém-inseridas
+                // Buscar todas as linhas recém-inseridas (incluindo SKU Armazém)
                 const pendingRows = await pool.query(
-                    `SELECT id, sku_text 
+                    `SELECT id, sku_text, "SKU (Armazém)" as sku_armazem
                      FROM raw_export_orders 
                      WHERE import_id = $1 AND status = 'pending'`,
                     [batchId]
@@ -1273,29 +1273,34 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                         let matchedSku: string | null = null;
                         let matchSource: string = '';
 
-                        // 1️⃣ PRIMEIRO: Buscar SKU exato na tabela produtos
+                        // 1️⃣ PRIMEIRO: Buscar SKU exato na tabela produtos (sku_text ou sku_armazem)
                         const produtoResult = await pool.query(
                             `SELECT sku 
                              FROM obsidian.produtos 
-                             WHERE UPPER(sku) = UPPER(TRIM($1))
+                             WHERE UPPER(sku) = UPPER(TRIM($1)) OR UPPER(sku) = UPPER(TRIM($2))
                              LIMIT 1`,
-                            [row.sku_text]
+                            [row.sku_text, row.sku_armazem]
                         );
 
                         if (produtoResult.rows.length > 0) {
                             matchedSku = produtoResult.rows[0].sku;
                             matchSource = 'direct';
                         } else {
-                            // 2️⃣ SEGUNDO: Buscar em aliases com normalização
+                            // 2️⃣ SEGUNDO: Buscar em aliases com normalização (sku_text ou sku_armazem)
                             const aliasResult = await pool.query(
                                 `SELECT stock_sku, confidence_default, id 
                                  FROM obsidian.sku_aliases 
                                  WHERE client_id = $1 
-                                   AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
-                                       UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
+                                   AND (
+                                       UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                           UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
+                                       OR 
+                                       UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                           UPPER(REGEXP_REPLACE($3, '[^A-Z0-9]', '', 'g'))
+                                   )
                                  ORDER BY confidence_default DESC, times_used DESC 
                                  LIMIT 1`,
-                                [clientIdNum, row.sku_text]
+                                [clientIdNum, row.sku_text, row.sku_armazem]
                             );
 
                             if (aliasResult.rows.length > 0) {
@@ -1814,8 +1819,8 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
                 console.log(`✅ Cliente normalizado para ID: ${clientIdNum}`);
             }
 
-            // Buscar todos os itens pendentes (filtrado por cliente se fornecido)
-            let query = `SELECT id, sku_text, client_id
+            // Buscar todos os itens pendentes (filtrado por cliente se fornecido) - INCLUINDO SKU ARMAZÉM
+            let query = `SELECT id, sku_text, "SKU (Armazém)" as sku_armazem, client_id
                          FROM raw_export_orders
                          WHERE status = 'pending'`;
             const params: any[] = [];
@@ -1842,28 +1847,33 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
             for (const item of pendingItems.rows) {
                 let matchedSku = null;
 
-                // 1️⃣ Buscar SKU exato em produtos
+                // 1️⃣ Buscar SKU exato em produtos (sku_text OU sku_armazem)
                 const produtoResult = await pool.query(
                     `SELECT sku 
                      FROM obsidian.produtos 
-                     WHERE UPPER(sku) = UPPER(TRIM($1))
+                     WHERE UPPER(sku) = UPPER(TRIM($1)) OR UPPER(sku) = UPPER(TRIM($2))
                      LIMIT 1`,
-                    [item.sku_text]
+                    [item.sku_text, item.sku_armazem]
                 );
 
                 if (produtoResult.rows.length > 0) {
                     matchedSku = produtoResult.rows[0].sku;
                 } else {
-                    // 2️⃣ Buscar em aliases
+                    // 2️⃣ Buscar em aliases (sku_text OU sku_armazem)
                     const aliasResult = await pool.query(
                         `SELECT stock_sku, id 
                          FROM obsidian.sku_aliases 
                          WHERE client_id = $1 
-                           AND UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
-                               UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
+                           AND (
+                               UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                   UPPER(REGEXP_REPLACE($2, '[^A-Z0-9]', '', 'g'))
+                               OR
+                               UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                                   UPPER(REGEXP_REPLACE($3, '[^A-Z0-9]', '', 'g'))
+                           )
                          ORDER BY confidence_default DESC, times_used DESC 
                          LIMIT 1`,
-                        [item.client_id, item.sku_text]
+                        [item.client_id, item.sku_text, item.sku_armazem]
                     );
 
                     if (aliasResult.rows.length > 0) {

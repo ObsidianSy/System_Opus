@@ -4,8 +4,6 @@
 -- Problema: client_id é BIGINT mas função espera INTEGER
 -- ============================================================================
 
-\echo '🔧 Corrigindo tipos da função processar_pedido...\n'
-
 -- Dropar função antiga
 DROP FUNCTION IF EXISTS obsidian.processar_pedido(text, date, text, text, jsonb, integer, uuid);
 
@@ -67,6 +65,7 @@ BEGIN
         -- INSERIR OU ATUALIZAR VENDA (UPSERT)
         -- O TRIGGER trg_baixa_estoque vai baixar o estoque automaticamente
         INSERT INTO obsidian.vendas (
+            pedido_uid,
             data_venda,
             nome_cliente,
             sku_produto,
@@ -75,11 +74,11 @@ BEGIN
             valor_total,
             nome_produto,
             canal,
-            pedido_uid,
             client_id,
             import_id,
             codigo_ml
         ) VALUES (
+            p_pedido_uid,
             p_data_venda,
             p_nome_cliente,
             v_sku,
@@ -88,7 +87,6 @@ BEGIN
             v_quantidade * v_preco_unitario,
             v_nome_produto,
             p_canal,
-            p_pedido_uid,
             p_client_id,
             p_import_id,
             p_pedido_uid  -- codigo_ml = pedido_uid para vendas ML
@@ -102,7 +100,8 @@ BEGIN
             nome_produto = EXCLUDED.nome_produto,
             canal = EXCLUDED.canal,
             client_id = EXCLUDED.client_id,
-            import_id = EXCLUDED.import_id;
+            import_id = EXCLUDED.import_id,
+            pedido_uid = EXCLUDED.pedido_uid;
 
         -- Buscar estoque atual
         SELECT quantidade_atual INTO v_estoque_atual
@@ -121,7 +120,3 @@ BEGIN
     RETURN;
 END;
 $function$;
-
-\echo '✅ Função processar_pedido corrigida!\n'
-\echo '📊 Nova assinatura: processar_pedido(text, date, text, text, jsonb, BIGINT, uuid)\n'
-\echo '💡 Agora aceita client_id como BIGINT (compatível com raw_export_orders)\n'
