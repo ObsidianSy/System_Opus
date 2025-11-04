@@ -823,7 +823,7 @@ export async function relacionarSkus(params: RelacionarParams) {
 async function relacionarManualML(params: { raw_id: number; sku: string; learn_alias?: boolean; alias_text?: string }) {
     const { raw_id, sku, learn_alias, alias_text } = params;
 
-    logger.info('📦 Relacionamento manual ML - raw_id:', raw_id, 'sku:', sku);
+    logger.info('📦 Relacionamento manual ML', { raw_id, sku });
 
     const itemResult = await pool.query(
         `SELECT id, order_id, sku_text, client_id 
@@ -873,7 +873,7 @@ async function aprenderAlias(clientId: number, aliasText: string, stockSku: stri
                  VALUES ($1, $2, $3, 0.95, 1)`,
                 [clientId, aliasText, stockSku]
             );
-            logger.info('✅ Alias criado:', aliasText, '->', stockSku);
+            logger.info('✅ Alias criado', { aliasText, stockSku });
         } catch (insertError: any) {
             if (insertError.code === '23505') {
                 const retryAlias = await pool.query(
@@ -906,7 +906,7 @@ async function aprenderAlias(clientId: number, aliasText: string, stockSku: stri
              WHERE id = $2`,
             [stockSku, existingAlias.rows[0].id]
         );
-        logger.info('✅ Alias atualizado:', aliasText, '->', stockSku);
+        logger.info('✅ Alias atualizado', { aliasText, stockSku });
     }
 }
 
