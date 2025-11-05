@@ -18,12 +18,12 @@ async function checkColumns() {
               AND table_name = 'pagamentos'
             ORDER BY ordinal_position
         `);
-        
+
         console.log('📊 Colunas da tabela obsidian.pagamentos:\n');
         result.rows.forEach(row => {
             console.log(`  ${row.column_name.padEnd(30)} | ${row.data_type.padEnd(20)} | Nullable: ${row.is_nullable}`);
         });
-        
+
     } catch (err) {
         console.error('❌ Erro:', err.message);
     } finally {
