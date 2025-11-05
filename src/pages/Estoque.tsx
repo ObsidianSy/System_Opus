@@ -227,12 +227,14 @@ const Estoque = () => {
             const sku = row.SKU || row.sku;
 
             const payload = {
+              sku: sku,  // Adicionar SKU no payload
               nome_produto: row['Nome do Produto'] || row['Nome Produto'] || row.nome,
               categoria: row.Categoria || row.categoria,
               tipo_produto: row.Tipo || row['Tipo Produto'] || row.tipo_produto,
               quantidade_atual: Number(row.Quantidade || row['Quantidade Atual'] || row.quantidade || 0),
               unidade_medida: row.Unidade || row['Unidade de Medida'] || row.unidade_medida,
-              preco_unitario: Number(row['Preço Unitário'] || row.preco_unitario || 0)
+              preco_unitario: Number(row['Preço Unitário'] || row.preco_unitario || 0),
+              componentes: [] // Array vazio para produtos simples
             };
 
             // Validação básica
@@ -242,17 +244,47 @@ const Estoque = () => {
               continue;
             }
 
-            const response = await fetch(`/api/produtos/${sku}`, {
+            // Tentar PUT primeiro (atualizar), se falhar, usar POST (criar)
+            let response = await fetch(`/api/estoque/${sku}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
             });
 
+            // Se retornou 404, produto não existe, então criar
+            if (response.status === 404) {
+              console.log(`ℹ️ ${sku}: Não existe, criando novo produto...`);
+              response = await fetch('/api/estoque', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              });
+            }
+
             if (response.ok) {
               sucessos++;
+              const result = await response.json();
+              console.log(`✅ ${sku}: Sucesso`, result);
             } else {
-              const errorData = await response.json();
-              errosDetalhados.push(`${sku}: ${errorData.error || 'Erro desconhecido'}`);
+              const contentType = response.headers.get('content-type');
+              let errorMsg = `Status ${response.status}`;
+              
+              try {
+                if (contentType?.includes('application/json')) {
+                  const errorData = await response.json();
+                  errorMsg = errorData.error || errorData.message || JSON.stringify(errorData);
+                  console.error(`❌ ${sku}: JSON Error`, errorData);
+                } else {
+                  const textError = await response.text();
+                  errorMsg = textError.substring(0, 200);
+                  console.error(`❌ ${sku}: Text Error`, textError);
+                }
+              } catch (e) {
+                errorMsg = `Erro ao processar resposta: ${response.statusText}`;
+                console.error(`❌ ${sku}: Parse Error`, e);
+              }
+              
+              errosDetalhados.push(`${sku}: ${errorMsg}`);
               erros++;
             }
           } catch (error: any) {
@@ -268,6 +300,7 @@ const Estoque = () => {
 
             const payload = {
               id_materia_prima: sku, // Usar SKU como ID se não tiver ID específico
+              sku_materia_prima: sku, // Adicionar SKU também
               nome_materia_prima: row['Nome da Matéria-Prima'] || row['Nome Matéria-Prima'] || row.nome,
               categoria: row.Categoria || row.categoria,
               quantidade_atual: Number(row.Quantidade || row['Quantidade Atual'] || row.quantidade || 0),
@@ -282,17 +315,47 @@ const Estoque = () => {
               continue;
             }
 
-            const response = await fetch(`/api/materia-prima/${sku}`, {
+            // Tentar PUT primeiro (atualizar), se falhar, usar POST (criar)
+            let response = await fetch(`/api/materia-prima/${sku}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
             });
 
+            // Se retornou 404, matéria-prima não existe, então criar
+            if (response.status === 404) {
+              console.log(`ℹ️ MP ${sku}: Não existe, criando nova matéria-prima...`);
+              response = await fetch('/api/materia-prima', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              });
+            }
+
             if (response.ok) {
               sucessos++;
+              const result = await response.json();
+              console.log(`✅ MP ${sku}: Sucesso`, result);
             } else {
-              const errorData = await response.json();
-              errosDetalhados.push(`${sku}: ${errorData.error || 'Erro desconhecido'}`);
+              const contentType = response.headers.get('content-type');
+              let errorMsg = `Status ${response.status}`;
+              
+              try {
+                if (contentType?.includes('application/json')) {
+                  const errorData = await response.json();
+                  errorMsg = errorData.error || errorData.message || JSON.stringify(errorData);
+                  console.error(`❌ MP ${sku}: JSON Error`, errorData);
+                } else {
+                  const textError = await response.text();
+                  errorMsg = textError.substring(0, 200);
+                  console.error(`❌ MP ${sku}: Text Error`, textError);
+                }
+              } catch (e) {
+                errorMsg = `Erro ao processar resposta: ${response.statusText}`;
+                console.error(`❌ MP ${sku}: Parse Error`, e);
+              }
+              
+              errosDetalhados.push(`${sku}: ${errorMsg}`);
               erros++;
             }
           } catch (error: any) {
