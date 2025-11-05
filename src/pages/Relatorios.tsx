@@ -25,6 +25,8 @@ const Relatorios = () => {
   const [quantityFilter, setQuantityFilter] = useState<string>("todos");
   const [categoryFilter, setCategoryFilter] = useState<string>("todas");
   const [clienteFilter, setClienteFilter] = useState<string>("todos");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(20);
   const navigate = useNavigate();
   const { vendas, produtos, clientes, pagamentos } = useAppDataWithFilters();
   const { dateRange } = useDateFilter();
@@ -34,11 +36,11 @@ const Relatorios = () => {
     return (vendas.data || []).reduce((acc, venda) => {
       const dataVenda = venda["Data Venda"];
       if (!dataVenda) return acc;
-      
+
       const mes = new Date(dataVenda).toLocaleString('pt-BR', { month: 'short', year: 'numeric' });
       const existing = acc.find(item => item.name === mes);
       const valorTotal = toNumber(venda["Valor Total"]);
-      
+
       if (existing) {
         existing.valor += valorTotal;
       } else {
@@ -51,16 +53,16 @@ const Relatorios = () => {
   // Relatório de vendas por SKU (totalizado por data)
   const vendasPorSKU = useMemo(() => {
     const vendidosPorSKU = new Map();
-    
+
     (vendas.data || []).forEach(venda => {
       const sku = venda["SKU Produto"];
       const nome = venda["Nome Produto"];
       const quantidade = toNumber(venda["Quantidade Vendida"]);
       const precoUnit = toNumber(venda["Preço Unitário"]);
       const valorTotal = toNumber(venda["Valor Total"]);
-      
+
       if (!sku) return;
-      
+
       if (vendidosPorSKU.has(sku)) {
         const existing = vendidosPorSKU.get(sku);
         existing.quantidade += quantidade;
@@ -75,7 +77,7 @@ const Relatorios = () => {
         });
       }
     });
-    
+
     return Array.from(vendidosPorSKU.values()).sort((a, b) => b.valorTotal - a.valorTotal);
   }, [vendas.data]);
 
@@ -83,29 +85,55 @@ const Relatorios = () => {
   const dadosGraficos = useMemo(() => {
     const vendidosPorProduto = new Map();
     const vendidosPorCategoria = new Map();
-    
+
     (vendas.data || []).forEach(venda => {
       const nome = venda["Nome Produto"];
       const sku = venda["SKU Produto"];
       const quantidade = toNumber(venda["Quantidade Vendida"]);
-      
+
       if (nome) {
         vendidosPorProduto.set(nome, (vendidosPorProduto.get(nome) || 0) + quantidade);
       }
-      
+
       const produto = (produtos.data || []).find(p => p["SKU"] === sku);
-      const categoria = produto?.["Categoria"] || "Outros";
+      const categoria = produto?.["Categoria"] || "Sem Categoria";
       vendidosPorCategoria.set(categoria, (vendidosPorCategoria.get(categoria) || 0) + quantidade);
     });
-    
+
     const produtosMaisVendidos = Array.from(vendidosPorProduto.entries())
       .map(([name, valor]) => ({ name, valor }))
       .sort((a, b) => b.valor - a.valor)
       .slice(0, 5);
-      
-    const vendasPorCategoria = Array.from(vendidosPorCategoria.entries())
-      .map(([name, value]) => ({ name, value }));
-    
+
+    // Ordenar categorias por valor e agrupar as menores em "Outros"
+    const categoriasOrdenadas = Array.from(vendidosPorCategoria.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+
+    const totalVendido = categoriasOrdenadas.reduce((acc, cat) => acc + cat.value, 0);
+    const TOP_CATEGORIAS = 8; // Mostrar apenas top 8 categorias
+
+    let vendasPorCategoria: Array<{ name: string; value: number }> = [];
+    let outros = 0;
+
+    categoriasOrdenadas.forEach((cat, index) => {
+      // Calcular percentual
+      const percentual = totalVendido > 0 ? (cat.value / totalVendido) * 100 : 0;
+
+      // Se está no top 8 E tem mais de 2% do total, mostra separado
+      if (index < TOP_CATEGORIAS && percentual >= 2) {
+        vendasPorCategoria.push(cat);
+      } else {
+        // Agrupa em "Outros"
+        outros += cat.value;
+      }
+    });
+
+    // Adiciona "Outros" se houver
+    if (outros > 0) {
+      vendasPorCategoria.push({ name: 'Outros', value: outros });
+    }
+
     return { produtosMaisVendidos, vendasPorCategoria };
   }, [vendas.data, produtos.data]);
 
@@ -114,35 +142,35 @@ const Relatorios = () => {
     const totalVendas = (vendas.data || []).length;
     const totalClientes = (clientes.data || []).length;
     const totalProdutos = (produtos.data || []).length;
-    
+
     const faturamentoTotal = (vendas.data || []).reduce((acc, venda) => {
       return acc + toNumber(venda["Valor Total"]);
     }, 0);
-    
+
     const ticketMedio = totalVendas > 0 ? faturamentoTotal / totalVendas : 0;
-    
+
     const valorEstoque = (produtos.data || []).reduce((acc, produto) => {
       const quantidade = toNumber(produto["Quantidade Atual"]);
       const preco = toNumber(produto["Preço Unitário"]);
       return acc + (quantidade * preco);
     }, 0);
-    
+
     // Calcular clientes devedores usando vendas e pagamentos
     const vendasPorCliente = new Map();
     const pagamentosPorCliente = new Map();
-    
+
     (vendas.data || []).forEach(venda => {
       const cliente = venda["Nome Cliente"];
       const valor = toNumber(venda["Valor Total"]);
       vendasPorCliente.set(cliente, (vendasPorCliente.get(cliente) || 0) + valor);
     });
-    
+
     (pagamentos.data || []).forEach(pag => {
       const cliente = pag["Nome Cliente"];
       const valor = toNumber(pag["Valor Pago"]);
       pagamentosPorCliente.set(cliente, (pagamentosPorCliente.get(cliente) || 0) + valor);
     });
-    
+
     let clientesDevedores = 0;
     vendasPorCliente.forEach((totalComprado, cliente) => {
       const totalPago = pagamentosPorCliente.get(cliente) || 0;
@@ -150,11 +178,11 @@ const Relatorios = () => {
         clientesDevedores++;
       }
     });
-    
-    const produtosSemEstoque = (produtos.data || []).filter(produto => 
+
+    const produtosSemEstoque = (produtos.data || []).filter(produto =>
       toNumber(produto["Quantidade Atual"]) === 0
     ).length;
-    
+
     return {
       totalVendas,
       totalClientes,
@@ -171,10 +199,15 @@ const Relatorios = () => {
   const categorias = Array.from(new Set(
     (produtos.data || []).map(p => p["Categoria"]).filter(Boolean)
   ));
-  
+
   const clientesUnicos = Array.from(new Set(
     (vendas.data || []).map(v => v["Nome Cliente"]).filter(Boolean)
   ));
+
+  // Reset página quando filtros mudam
+  useMemo(() => {
+    setCurrentPage(1);
+  }, [quantityFilter, categoryFilter, clienteFilter]);
 
   // Filtrar dados por múltiplos critérios
   const dadosFiltrados = useMemo(() => {
@@ -182,14 +215,14 @@ const Relatorios = () => {
     const produtosFiltrados = (produtos.data || []).filter(item => {
       const quantidade = toNumber(item["Quantidade Atual"]);
       const categoria = item["Categoria"];
-      
+
       const matchesQuantity = quantityFilter === "todos" ? true :
         quantityFilter === "sem-estoque" ? quantidade === 0 :
-        quantityFilter === "estoque-baixo" ? quantidade > 0 && quantidade < 10 :
-        quantityFilter === "em-estoque" ? quantidade >= 10 : true;
-      
+          quantityFilter === "estoque-baixo" ? quantidade > 0 && quantidade < 10 :
+            quantityFilter === "em-estoque" ? quantidade >= 10 : true;
+
       const matchesCategory = categoryFilter === "todas" ? true : categoria === categoryFilter;
-      
+
       return matchesQuantity && matchesCategory;
     });
 
@@ -211,16 +244,16 @@ const Relatorios = () => {
       "Preço Unitário Médio": `R$ ${item.precoUnitario.toFixed(2)}`,
       "Valor Total": `R$ ${item.valorTotal.toFixed(2)}`
     }));
-    
+
     const nomeArquivo = `relatorio-vendas-sku-${dateRange.startDate.toISOString().split('T')[0]}-a-${dateRange.endDate.toISOString().split('T')[0]}.csv`;
-    
+
     if (dados.length > 0) {
       const headers = Object.keys(dados[0]);
       const csvContent = [
         headers.join(','),
         ...dados.map(row => headers.map(header => `"${row[header as keyof typeof row]}"`).join(','))
       ].join('\n');
-      
+
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -234,12 +267,12 @@ const Relatorios = () => {
     const doc = new jsPDF();
     const hoje = new Date().toLocaleDateString('pt-BR');
     const periodo = `${dateRange.startDate.toLocaleDateString('pt-BR')} a ${dateRange.endDate.toLocaleDateString('pt-BR')}`;
-    
+
     doc.setFontSize(18);
     doc.text('Relatório de Vendas por SKU', 14, 22);
     doc.setFontSize(11);
     doc.text(`Período: ${periodo} | Gerado em: ${hoje}`, 14, 30);
-    
+
     const tableData = vendasPorSKU.map(item => [
       item.sku,
       item.nome,
@@ -247,7 +280,7 @@ const Relatorios = () => {
       `R$ ${item.precoUnitario.toFixed(2)}`,
       `R$ ${item.valorTotal.toFixed(2)}`
     ]);
-    
+
     autoTable(doc, {
       head: [['SKU', 'Nome Produto', 'Qtd Vendida', 'Preço Unit.', 'Valor Total']],
       body: tableData,
@@ -255,7 +288,7 @@ const Relatorios = () => {
       styles: { fontSize: 8 },
       headStyles: { fillColor: [41, 128, 185] }
     });
-    
+
     doc.save(`relatorio-vendas-sku-${dateRange.startDate.toISOString().split('T')[0]}-a-${dateRange.endDate.toISOString().split('T')[0]}.pdf`);
   };
 
@@ -263,7 +296,7 @@ const Relatorios = () => {
   const exportarRelatorioCSV = (tipo: string) => {
     let dados: any[] = [];
     let nomeArquivo = "";
-    
+
     if (tipo === "produtos") {
       dados = dadosFiltrados.produtosFiltrados.map(item => ({
         "SKU": item["SKU"],
@@ -285,7 +318,7 @@ const Relatorios = () => {
       }));
       nomeArquivo = `relatorio-vendas-${dateRange.startDate.toISOString().split('T')[0]}-a-${dateRange.endDate.toISOString().split('T')[0]}.csv`;
     }
-    
+
     // Converter para CSV
     if (dados.length > 0) {
       const headers = Object.keys(dados[0]);
@@ -293,7 +326,7 @@ const Relatorios = () => {
         headers.join(','),
         ...dados.map(row => headers.map(header => `"${row[header]}"`).join(','))
       ].join('\n');
-      
+
       // Download do arquivo
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
@@ -307,17 +340,17 @@ const Relatorios = () => {
   const exportarRelatorioPDF = (tipo: string) => {
     const doc = new jsPDF();
     const hoje = new Date().toLocaleDateString('pt-BR');
-    
+
     if (tipo === "produtos") {
       doc.setFontSize(18);
       doc.text('Relatório de Produtos', 14, 22);
       doc.setFontSize(11);
       doc.text(`Filtro: ${quantityFilter} | Data: ${hoje}`, 14, 30);
-      
+
       const tableData = dadosFiltrados.produtosFiltrados.map(item => {
         const quantidade = Number(item["Quantidade Atual"]) || 0;
         const preco = Number(item["Preço Unitário"]) || 0;
-        
+
         return [
           item["SKU"],
           item["Nome Produto"],
@@ -327,14 +360,14 @@ const Relatorios = () => {
           `R$ ${(quantidade * preco).toFixed(2)}`
         ];
       });
-      
+
       autoTable(doc, {
         head: [['SKU', 'Nome', 'Categoria', 'Qtd', 'Preço Unit.', 'Valor Total']],
         body: tableData,
         startY: 35,
         styles: { fontSize: 8 },
         headStyles: { fillColor: [41, 128, 185] },
-        didParseCell: function(data) {
+        didParseCell: function (data) {
           if (data.column.index === 3 && data.section === 'body') {
             const quantidade = Number(data.cell.text[0]);
             if (quantidade === 0) {
@@ -350,15 +383,15 @@ const Relatorios = () => {
           }
         }
       });
-      
+
       doc.save(`relatorio-produtos-${quantityFilter}-${new Date().toISOString().split('T')[0]}.pdf`);
-      
+
     } else if (tipo === "vendas") {
       doc.setFontSize(18);
       doc.text('Relatório de Vendas', 14, 22);
       doc.setFontSize(11);
       doc.text(`Período: ${dateRange.startDate.toLocaleDateString('pt-BR')} a ${dateRange.endDate.toLocaleDateString('pt-BR')} | Data: ${hoje}`, 14, 30);
-      
+
       const tableData = dadosFiltrados.vendasFiltradas.map(venda => [
         venda["ID Venda"],
         venda["Data Venda"],
@@ -367,7 +400,7 @@ const Relatorios = () => {
         toNumber(venda["Quantidade Vendida"]).toString(),
         `R$ ${toNumber(venda["Valor Total"]).toFixed(2)}`
       ]);
-      
+
       autoTable(doc, {
         head: [['ID Venda', 'Data', 'Cliente', 'Produto', 'Qtd', 'Valor Total']],
         body: tableData,
@@ -375,7 +408,7 @@ const Relatorios = () => {
         styles: { fontSize: 8 },
         headStyles: { fillColor: [41, 128, 185] }
       });
-      
+
       doc.save(`relatorio-vendas-${dateRange.startDate.toISOString().split('T')[0]}-a-${dateRange.endDate.toISOString().split('T')[0]}.pdf`);
     }
   };
@@ -429,113 +462,133 @@ const Relatorios = () => {
               Clientes
             </TabsTrigger>
           </TabsList>
-          
+
           {/* Dashboard Tab */}
           <TabsContent value="dashboard" className="space-y-6">
-            {/* Estatísticas principais */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Card>
+            {/* Estatísticas principais - CARDS GRANDES */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Card className="bg-gradient-to-br from-green-500/10 to-green-600/5 border-green-500/20">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
                       <p className="text-sm font-medium text-muted-foreground">Faturamento Total</p>
-                      <p className="text-2xl font-bold text-green-600">R$ {estatisticas.faturamentoTotal.toFixed(2)}</p>
+                      <DollarSign className="h-5 w-5 text-green-600" />
                     </div>
-                    <DollarSign className="h-8 w-8 text-green-600" />
+                    <p className="text-3xl font-bold text-green-600">
+                      {formatCurrencyAbbreviated(estatisticas.faturamentoTotal)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Período selecionado</p>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
                       <p className="text-sm font-medium text-muted-foreground">Total de Vendas</p>
-                      <p className="text-2xl font-bold text-blue-600">{estatisticas.totalVendas}</p>
+                      <ShoppingCart className="h-5 w-5 text-blue-600" />
                     </div>
-                    <ShoppingCart className="h-8 w-8 text-blue-600" />
+                    <p className="text-3xl font-bold text-blue-600">
+                      {formatAbbreviated(estatisticas.totalVendas)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{estatisticas.totalVendas} transações</p>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-500/20">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
                       <p className="text-sm font-medium text-muted-foreground">Ticket Médio</p>
-                      <p className="text-2xl font-bold text-purple-600">R$ {estatisticas.ticketMedio.toFixed(2)}</p>
+                      <TrendingUp className="h-5 w-5 text-purple-600" />
                     </div>
-                    <TrendingUp className="h-8 w-8 text-purple-600" />
+                    <p className="text-3xl font-bold text-purple-600">
+                      {formatCurrencyAbbreviated(estatisticas.ticketMedio)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Por transação</p>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 border-orange-500/20">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
                       <p className="text-sm font-medium text-muted-foreground">Valor do Estoque</p>
-                      <p className="text-2xl font-bold text-orange-600">R$ {estatisticas.valorEstoque.toFixed(2)}</p>
+                      <Package className="h-5 w-5 text-orange-600" />
                     </div>
-                    <Package className="h-8 w-8 text-orange-600" />
+                    <p className="text-3xl font-bold text-orange-600">
+                      {formatCurrencyAbbreviated(estatisticas.valorEstoque)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{estatisticas.totalProdutos} produtos</p>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Estatísticas secundárias */}
+            {/* Estatísticas secundárias - LINHA COMPACTA */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Total Clientes</p>
-                      <p className="text-xl font-semibold">{estatisticas.totalClientes}</p>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <Users className="h-5 w-5 text-primary" />
                     </div>
-                    <Users className="h-6 w-6 text-muted-foreground" />
+                    <div>
+                      <p className="text-2xl font-bold">{estatisticas.totalClientes}</p>
+                      <p className="text-xs text-muted-foreground">Clientes</p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Total Produtos</p>
-                      <p className="text-xl font-semibold">{estatisticas.totalProdutos}</p>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <Package className="h-5 w-5 text-primary" />
                     </div>
-                    <Package className="h-6 w-6 text-muted-foreground" />
+                    <div>
+                      <p className="text-2xl font-bold">{estatisticas.totalProdutos}</p>
+                      <p className="text-xs text-muted-foreground">Produtos</p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Clientes Devedores</p>
-                      <p className="text-xl font-semibold text-red-600">{estatisticas.clientesDevedores}</p>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-red-500/10">
+                      <TrendingDown className="h-5 w-5 text-red-600" />
                     </div>
-                    <TrendingDown className="h-6 w-6 text-red-600" />
+                    <div>
+                      <p className="text-2xl font-bold text-red-600">{estatisticas.clientesDevedores}</p>
+                      <p className="text-xs text-muted-foreground">Devedores</p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Sem Estoque</p>
-                      <p className="text-xl font-semibold text-yellow-600">{estatisticas.produtosSemEstoque}</p>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-yellow-500/10">
+                      <Activity className="h-5 w-5 text-yellow-600" />
                     </div>
-                    <Activity className="h-6 w-6 text-yellow-600" />
+                    <div>
+                      <p className="text-2xl font-bold text-yellow-600">{estatisticas.produtosSemEstoque}</p>
+                      <p className="text-xs text-muted-foreground">Sem Estoque</p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
             {/* Gráficos principais */}
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid lg:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -547,7 +600,7 @@ const Relatorios = () => {
                   <VendasPorMesChart data={vendasPorMes} />
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -566,7 +619,7 @@ const Relatorios = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <TrendingUp className="h-5 w-5" />
-                  Produtos Mais Vendidos
+                  Top 5 Produtos Mais Vendidos
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -600,7 +653,7 @@ const Relatorios = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div>
                     <label className="text-sm font-medium mb-2 block">Categoria</label>
                     <Select value={categoryFilter} onValueChange={setCategoryFilter}>
@@ -615,10 +668,10 @@ const Relatorios = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div className="flex items-end">
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => {
                         setClienteFilter("todos");
                         setCategoryFilter("todas");
@@ -639,7 +692,7 @@ const Relatorios = () => {
                 <VendasPorMesChart data={vendasPorMes} />
               </CardContent>
             </Card>
-            
+
             <div className="grid md:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
@@ -649,7 +702,7 @@ const Relatorios = () => {
                   <ProdutosMaisVendidosChart data={dadosGraficos.produtosMaisVendidos} />
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader>
                   <CardTitle>Vendas por Categoria</CardTitle>
@@ -661,53 +714,60 @@ const Relatorios = () => {
             </div>
 
             {/* Resumo das vendas filtradas */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-primary">{dadosFiltrados.vendasFiltradas.length}</p>
-                    <p className="text-sm text-muted-foreground">Vendas Filtradas</p>
-                  </div>
-                </CardContent>
-              </Card>
-              
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-green-600">
-                      R$ {dadosFiltrados.vendasFiltradas.reduce((acc, venda) => 
-                        acc + toNumber(venda["Valor Total"]), 0
-                      ).toFixed(2)}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-muted-foreground">Vendas Filtradas</p>
+                    <p className="text-3xl font-bold text-primary">
+                      {formatAbbreviated(dadosFiltrados.vendasFiltradas.length)}
                     </p>
-                    <p className="text-sm text-muted-foreground">Faturamento</p>
                   </div>
                 </CardContent>
               </Card>
-              
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-blue-600">
-                      {dadosFiltrados.vendasFiltradas.reduce((acc, venda) => 
-                        acc + toNumber(venda["Quantidade Vendida"]), 0
+
+              <Card className="bg-gradient-to-br from-green-500/10 to-green-600/5 border-green-500/20">
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-muted-foreground">Faturamento</p>
+                    <p className="text-3xl font-bold text-green-600">
+                      {formatCurrencyAbbreviated(
+                        dadosFiltrados.vendasFiltradas.reduce((acc, venda) =>
+                          acc + toNumber(venda["Valor Total"]), 0
+                        )
                       )}
                     </p>
-                    <p className="text-sm text-muted-foreground">Itens Vendidos</p>
                   </div>
                 </CardContent>
               </Card>
-              
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-purple-600">
-                      R$ {dadosFiltrados.vendasFiltradas.length > 0 ? 
-                        (dadosFiltrados.vendasFiltradas.reduce((acc, venda) => 
-                          acc + toNumber(venda["Valor Total"]), 0
-                        ) / dadosFiltrados.vendasFiltradas.length).toFixed(2) : '0.00'
-                      }
+
+              <Card className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20">
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-muted-foreground">Itens Vendidos</p>
+                    <p className="text-3xl font-bold text-blue-600">
+                      {formatAbbreviated(
+                        dadosFiltrados.vendasFiltradas.reduce((acc, venda) =>
+                          acc + toNumber(venda["Quantidade Vendida"]), 0
+                        )
+                      )}
                     </p>
-                    <p className="text-sm text-muted-foreground">Ticket Médio</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-500/20">
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-muted-foreground">Ticket Médio</p>
+                    <p className="text-3xl font-bold text-purple-600">
+                      {formatCurrencyAbbreviated(
+                        dadosFiltrados.vendasFiltradas.length > 0 ?
+                          dadosFiltrados.vendasFiltradas.reduce((acc, venda) =>
+                            acc + toNumber(venda["Valor Total"]), 0
+                          ) / dadosFiltrados.vendasFiltradas.length : 0
+                      )}
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -716,68 +776,111 @@ const Relatorios = () => {
             {/* Tabela de vendas por SKU */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5" />
-                  Vendas por SKU (Período e Filtros Selecionados)
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5" />
+                    Vendas por SKU
+                  </CardTitle>
+                  <Badge variant="outline" className="px-3 py-1">
+                    {vendasPorSKU.length} produtos vendidos
+                  </Badge>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <Badge variant="outline" className="px-3 py-1">
-                      {vendasPorSKU.length} produtos vendidos
-                    </Badge>
-                  </div>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>SKU</TableHead>
-                        <TableHead>Nome Produto</TableHead>
-                        <TableHead className="text-right">Qtd Vendida</TableHead>
-                        <TableHead className="text-right">Preço Unit. Médio</TableHead>
-                        <TableHead className="text-right">Valor Total</TableHead>
-                        <TableHead className="text-right">% do Total</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {vendasPorSKU.map((item, index) => {
-                        const percentual = estatisticas.faturamentoTotal > 0 
-                          ? (item.valorTotal / estatisticas.faturamentoTotal * 100)
-                          : 0;
-                        
-                        return (
-                          <TableRow key={item.sku}>
-                            <TableCell className="font-mono text-sm">{item.sku}</TableCell>
-                            <TableCell className="font-medium">{item.nome}</TableCell>
-                            <TableCell className="text-right">
-                              <Badge variant="secondary">{item.quantidade}</Badge>
-                            </TableCell>
-                            <TableCell className="text-right">R$ {item.precoUnitario.toFixed(2)}</TableCell>
-                            <TableCell className="text-right font-semibold text-primary">
-                              R$ {item.valorTotal.toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Badge variant={percentual > 10 ? "default" : "outline"}>
-                                {percentual.toFixed(1)}%
-                              </Badge>
+                  {/* Tabela */}
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="font-semibold">SKU</TableHead>
+                          <TableHead className="font-semibold">Nome Produto</TableHead>
+                          <TableHead className="text-right font-semibold">Qtd Vendida</TableHead>
+                          <TableHead className="text-right font-semibold">Preço Unit.</TableHead>
+                          <TableHead className="text-right font-semibold">Valor Total</TableHead>
+                          <TableHead className="text-center font-semibold">% Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {vendasPorSKU
+                          .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+                          .map((item, index) => {
+                            const percentual = estatisticas.faturamentoTotal > 0
+                              ? (item.valorTotal / estatisticas.faturamentoTotal * 100)
+                              : 0;
+
+                            return (
+                              <TableRow key={item.sku} className="hover:bg-muted/30 transition-colors">
+                                <TableCell className="font-mono text-sm font-medium">{item.sku}</TableCell>
+                                <TableCell>{item.nome}</TableCell>
+                                <TableCell className="text-right">
+                                  <Badge variant="secondary" className="font-semibold">
+                                    {item.quantidade}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right text-muted-foreground">
+                                  {formatCurrencyAbbreviated(item.precoUnitario)}
+                                </TableCell>
+                                <TableCell className="text-right font-semibold text-primary">
+                                  {formatCurrencyAbbreviated(item.valorTotal)}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <Badge variant={percentual > 10 ? "default" : "outline"}>
+                                    {percentual.toFixed(1)}%
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        {vendasPorSKU.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center text-muted-foreground py-12">
+                              <div className="flex flex-col items-center gap-2">
+                                <ShoppingCart className="h-12 w-12 text-muted-foreground/50" />
+                                <p className="text-lg font-medium">Nenhuma venda encontrada</p>
+                                <p className="text-sm">Não há vendas no período selecionado</p>
+                              </div>
                             </TableCell>
                           </TableRow>
-                        );
-                      })}
-                      {vendasPorSKU.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                            Nenhuma venda encontrada no período selecionado
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Paginação */}
+                  {vendasPorSKU.length > pageSize && (
+                    <div className="flex items-center justify-between pt-4 border-t">
+                      <p className="text-sm text-muted-foreground">
+                        Mostrando {Math.min((currentPage - 1) * pageSize + 1, vendasPorSKU.length)} - {Math.min(currentPage * pageSize, vendasPorSKU.length)} de {vendasPorSKU.length} produtos
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                        >
+                          Anterior
+                        </Button>
+                        <span className="text-sm font-medium px-3">
+                          Página {currentPage} de {Math.ceil(vendasPorSKU.length / pageSize)}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage(p => Math.min(Math.ceil(vendasPorSKU.length / pageSize), p + 1))}
+                          disabled={currentPage >= Math.ceil(vendasPorSKU.length / pageSize)}
+                        >
+                          Próxima
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
-          
+
           <TabsContent value="produtos" className="space-y-6">
             {/* Filtros de produtos */}
             <Card>
@@ -803,7 +906,7 @@ const Relatorios = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div>
                     <label className="text-sm font-medium mb-2 block">Categoria</label>
                     <Select value={categoryFilter} onValueChange={setCategoryFilter}>
@@ -818,7 +921,7 @@ const Relatorios = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div className="flex items-end gap-2">
                     <Button variant="outline" size="sm" onClick={() => exportarRelatorioCSV("produtos")}>
                       <Download className="mr-1 h-4 w-4" /> CSV
@@ -832,53 +935,57 @@ const Relatorios = () => {
             </Card>
 
             {/* Resumo dos produtos filtrados */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-primary">{dadosFiltrados.produtosFiltrados.length}</p>
-                    <p className="text-sm text-muted-foreground">Produtos Filtrados</p>
-                  </div>
-                </CardContent>
-              </Card>
-              
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-green-600">
-                      R$ {dadosFiltrados.produtosFiltrados.reduce((acc, produto) => {
-                        const quantidade = toNumber(produto["Quantidade Atual"]);
-                        const preco = toNumber(produto["Preço Unitário"]);
-                        return acc + (quantidade * preco);
-                      }, 0).toFixed(2)}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-muted-foreground">Produtos Filtrados</p>
+                    <p className="text-3xl font-bold text-primary">
+                      {formatAbbreviated(dadosFiltrados.produtosFiltrados.length)}
                     </p>
-                    <p className="text-sm text-muted-foreground">Valor Total</p>
                   </div>
                 </CardContent>
               </Card>
-              
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-yellow-600">
-                      {dadosFiltrados.produtosFiltrados.filter(p => 
-                        toNumber(p["Quantidade Atual"]) < 10
+
+              <Card className="bg-gradient-to-br from-green-500/10 to-green-600/5 border-green-500/20">
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-muted-foreground">Valor Total</p>
+                    <p className="text-3xl font-bold text-green-600">
+                      {formatCurrencyAbbreviated(
+                        dadosFiltrados.produtosFiltrados.reduce((acc, produto) => {
+                          const quantidade = toNumber(produto["Quantidade Atual"]);
+                          const preco = toNumber(produto["Preço Unitário"]);
+                          return acc + (quantidade * preco);
+                        }, 0)
+                      )}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-br from-yellow-500/10 to-yellow-600/5 border-yellow-500/20">
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-muted-foreground">Estoque Baixo</p>
+                    <p className="text-3xl font-bold text-yellow-600">
+                      {dadosFiltrados.produtosFiltrados.filter(p =>
+                        toNumber(p["Quantidade Atual"]) < 10 && toNumber(p["Quantidade Atual"]) > 0
                       ).length}
                     </p>
-                    <p className="text-sm text-muted-foreground">Estoque Baixo</p>
                   </div>
                 </CardContent>
               </Card>
-              
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-red-600">
-                      {dadosFiltrados.produtosFiltrados.filter(p => 
+
+              <Card className="bg-gradient-to-br from-red-500/10 to-red-600/5 border-red-500/20">
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-muted-foreground">Sem Estoque</p>
+                    <p className="text-3xl font-bold text-red-600">
+                      {dadosFiltrados.produtosFiltrados.filter(p =>
                         toNumber(p["Quantidade Atual"]) === 0
                       ).length}
                     </p>
-                    <p className="text-sm text-muted-foreground">Sem Estoque</p>
                   </div>
                 </CardContent>
               </Card>
@@ -886,118 +993,198 @@ const Relatorios = () => {
 
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Package className="h-5 w-5" />
-                  Estoque Atual ({dadosFiltrados.produtosFiltrados.length} produtos)
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Package className="h-5 w-5" />
+                    Estoque Atual
+                  </CardTitle>
+                  <Badge variant="outline" className="px-3 py-1">
+                    {dadosFiltrados.produtosFiltrados.length} produtos
+                  </Badge>
+                </div>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Nome</TableHead>
-                      <TableHead>Categoria</TableHead>
-                      <TableHead className="text-right">Quantidade</TableHead>
-                      <TableHead className="text-right">Valor Unit.</TableHead>
-                      <TableHead className="text-right">Valor Total</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {dadosFiltrados.produtosFiltrados.map((item, index) => {
-                      const quantidade = toNumber(item["Quantidade Atual"]);
-                      const preco = toNumber(item["Preço Unitário"]);
-                      const valorTotal = quantidade * preco;
-                      
-                      return (
-                        <TableRow key={index}>
-                          <TableCell className="font-mono text-sm">{item["SKU"]}</TableCell>
-                          <TableCell className="font-medium">{item["Nome Produto"]}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs">
-                              {item["Categoria"]}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge className={`text-xs ${
-                              quantidade === 0 
-                                ? 'bg-destructive text-destructive-foreground' 
-                                : quantidade < 10
-                                ? 'bg-yellow-500 text-white'
-                                : 'bg-green-500 text-white'
-                            }`}>
-                              {quantidade}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">R$ {preco.toFixed(2)}</TableCell>
-                          <TableCell className="text-right font-semibold">
-                            R$ {valorTotal.toFixed(2)}
-                          </TableCell>
+                <div className="space-y-4">
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="font-semibold">SKU</TableHead>
+                          <TableHead className="font-semibold">Nome</TableHead>
+                          <TableHead className="font-semibold">Categoria</TableHead>
+                          <TableHead className="text-center font-semibold">Status</TableHead>
+                          <TableHead className="text-right font-semibold">Quantidade</TableHead>
+                          <TableHead className="text-right font-semibold">Valor Unit.</TableHead>
+                          <TableHead className="text-right font-semibold">Valor Total</TableHead>
                         </TableRow>
-                      );
-                    })}
-                    {dadosFiltrados.produtosFiltrados.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          Nenhum produto encontrado com os filtros selecionados
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {dadosFiltrados.produtosFiltrados
+                          .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+                          .map((item, index) => {
+                            const quantidade = toNumber(item["Quantidade Atual"]);
+                            const preco = toNumber(item["Preço Unitário"]);
+                            const valorTotal = quantidade * preco;
+
+                            return (
+                              <TableRow key={index} className="hover:bg-muted/30 transition-colors">
+                                <TableCell className="font-mono text-sm font-medium">{item["SKU"]}</TableCell>
+                                <TableCell className="font-medium">{item["Nome Produto"]}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className="text-xs">
+                                    {item["Categoria"]}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  {quantidade === 0 ? (
+                                    <Badge variant="destructive" className="text-xs">
+                                      Sem Estoque
+                                    </Badge>
+                                  ) : quantidade < 10 ? (
+                                    <Badge variant="secondary" className="text-xs bg-yellow-500/10 text-yellow-700 border-yellow-500/20">
+                                      Estoque Baixo
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="default" className="text-xs bg-green-500/10 text-green-700 border-green-500/20">
+                                      Em Estoque
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <span className={`font-semibold ${quantidade === 0
+                                    ? 'text-red-600'
+                                    : quantidade < 10
+                                      ? 'text-yellow-600'
+                                      : 'text-green-600'
+                                    }`}>
+                                    {quantidade}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-right text-muted-foreground">
+                                  {formatCurrencyAbbreviated(preco)}
+                                </TableCell>
+                                <TableCell className="text-right font-semibold text-primary">
+                                  {formatCurrencyAbbreviated(valorTotal)}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        {dadosFiltrados.produtosFiltrados.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center text-muted-foreground py-12">
+                              <div className="flex flex-col items-center gap-2">
+                                <Package className="h-12 w-12 text-muted-foreground/50" />
+                                <p className="text-lg font-medium">Nenhum produto encontrado</p>
+                                <p className="text-sm">Ajuste os filtros para ver mais resultados</p>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Paginação */}
+                  {dadosFiltrados.produtosFiltrados.length > pageSize && (
+                    <div className="flex items-center justify-between pt-4 border-t">
+                      <p className="text-sm text-muted-foreground">
+                        Mostrando {Math.min((currentPage - 1) * pageSize + 1, dadosFiltrados.produtosFiltrados.length)} - {Math.min(currentPage * pageSize, dadosFiltrados.produtosFiltrados.length)} de {dadosFiltrados.produtosFiltrados.length} produtos
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                        >
+                          Anterior
+                        </Button>
+                        <span className="text-sm font-medium px-3">
+                          Página {currentPage} de {Math.ceil(dadosFiltrados.produtosFiltrados.length / pageSize)}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage(p => Math.min(Math.ceil(dadosFiltrados.produtosFiltrados.length / pageSize), p + 1))}
+                          disabled={currentPage >= Math.ceil(dadosFiltrados.produtosFiltrados.length / pageSize)}
+                        >
+                          Próxima
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
-          
+
           <TabsContent value="clientes" className="space-y-6">
             {/* Estatísticas de clientes */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-primary">{estatisticas.totalClientes}</p>
-                    <p className="text-sm text-muted-foreground">Total de Clientes</p>
-                  </div>
-                </CardContent>
-              </Card>
-              
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-red-600">{estatisticas.clientesDevedores}</p>
-                    <p className="text-sm text-muted-foreground">Clientes Devedores</p>
-                  </div>
-                </CardContent>
-              </Card>
-              
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-green-600">
-                      R$ {(pagamentos.data || []).reduce((acc, pag) => 
-                        acc + toNumber(pag["Valor Pago"]), 0
-                      ).toFixed(2)}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-muted-foreground">Total de Clientes</p>
+                      <Users className="h-5 w-5 text-primary" />
+                    </div>
+                    <p className="text-3xl font-bold text-primary">
+                      {estatisticas.totalClientes}
                     </p>
-                    <p className="text-sm text-muted-foreground">Total Recebido</p>
                   </div>
                 </CardContent>
               </Card>
-              
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-yellow-600">
-                      R$ {(() => {
-                        const totalVendas = (vendas.data || []).reduce((acc, venda) => 
+
+              <Card className="bg-gradient-to-br from-red-500/10 to-red-600/5 border-red-500/20">
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-muted-foreground">Clientes Devedores</p>
+                      <TrendingDown className="h-5 w-5 text-red-600" />
+                    </div>
+                    <p className="text-3xl font-bold text-red-600">
+                      {estatisticas.clientesDevedores}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-br from-green-500/10 to-green-600/5 border-green-500/20">
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-muted-foreground">Total Recebido</p>
+                      <DollarSign className="h-5 w-5 text-green-600" />
+                    </div>
+                    <p className="text-3xl font-bold text-green-600">
+                      {formatCurrencyAbbreviated(
+                        (pagamentos.data || []).reduce((acc, pag) =>
+                          acc + toNumber(pag["Valor Pago"]), 0
+                        )
+                      )}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-br from-yellow-500/10 to-yellow-600/5 border-yellow-500/20">
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-muted-foreground">Total em Aberto</p>
+                      <Activity className="h-5 w-5 text-yellow-600" />
+                    </div>
+                    <p className="text-3xl font-bold text-yellow-600">
+                      {formatCurrencyAbbreviated((() => {
+                        const totalVendas = (vendas.data || []).reduce((acc, venda) =>
                           acc + toNumber(venda["Valor Total"]), 0
                         );
-                        const totalPago = (pagamentos.data || []).reduce((acc, pag) => 
+                        const totalPago = (pagamentos.data || []).reduce((acc, pag) =>
                           acc + toNumber(pag["Valor Pago"]), 0
                         );
-                        return Math.max(0, totalVendas - totalPago).toFixed(2);
-                      })()}
+                        return Math.max(0, totalVendas - totalPago);
+                      })())}
                     </p>
-                    <p className="text-sm text-muted-foreground">Total em Aberto</p>
                   </div>
                 </CardContent>
               </Card>
@@ -1027,7 +1214,7 @@ const Relatorios = () => {
                     {(() => {
                       // Calcular saldo por cliente usando vendas e pagamentos
                       const saldoPorCliente = new Map();
-                      
+
                       (vendas.data || []).forEach(venda => {
                         const cliente = venda["Nome Cliente"];
                         const valor = toNumber(venda["Valor Total"]);
@@ -1035,7 +1222,7 @@ const Relatorios = () => {
                         atual.comprado += valor;
                         saldoPorCliente.set(cliente, atual);
                       });
-                      
+
                       (pagamentos.data || []).forEach(pag => {
                         const cliente = pag["Nome Cliente"];
                         const valor = toNumber(pag["Valor Pago"]);
@@ -1043,17 +1230,17 @@ const Relatorios = () => {
                         atual.pago += valor;
                         saldoPorCliente.set(cliente, atual);
                       });
-                      
+
                       const clientesDevedores = Array.from(saldoPorCliente.values())
                         .filter(c => c.comprado > c.pago)
                         .sort((a, b) => (b.comprado - b.pago) - (a.comprado - a.pago));
-                        
+
                       return clientesDevedores.map((clienteData, index) => {
                         const totalComprado = clienteData.comprado;
                         const totalPago = clienteData.pago;
                         const saldo = totalComprado - totalPago;
                         const percentualPago = totalComprado > 0 ? (totalPago / totalComprado) * 100 : 0;
-                        
+
                         return (
                           <TableRow key={index}>
                             <TableCell className="font-medium">{clienteData.nome}</TableCell>
@@ -1063,7 +1250,7 @@ const Relatorios = () => {
                               R$ {saldo.toFixed(2)}
                             </TableCell>
                             <TableCell className="text-center">
-                              <Badge 
+                              <Badge
                                 variant={percentualPago > 80 ? "default" : percentualPago > 50 ? "secondary" : "destructive"}
                                 className="text-xs"
                               >
@@ -1071,9 +1258,9 @@ const Relatorios = () => {
                               </Badge>
                             </TableCell>
                             <TableCell>
-                              <Button 
-                                variant="link" 
-                                size="sm" 
+                              <Button
+                                variant="link"
+                                size="sm"
                                 onClick={() => {
                                   const cliente = (clientes.data || []).find(c => c["Nome"] === clienteData.nome);
                                   if (cliente) navigate(`/clientes/${cliente["ID Cliente"]}`);
@@ -1088,7 +1275,7 @@ const Relatorios = () => {
                     })()}
                     {(() => {
                       const saldoPorCliente = new Map();
-                      
+
                       (vendas.data || []).forEach(venda => {
                         const cliente = venda["Nome Cliente"];
                         const valor = toNumber(venda["Valor Total"]);
@@ -1096,7 +1283,7 @@ const Relatorios = () => {
                         atual.comprado += valor;
                         saldoPorCliente.set(cliente, atual);
                       });
-                      
+
                       (pagamentos.data || []).forEach(pag => {
                         const cliente = pag["Nome Cliente"];
                         const valor = toNumber(pag["Valor Pago"]);
@@ -1104,18 +1291,18 @@ const Relatorios = () => {
                         atual.pago += valor;
                         saldoPorCliente.set(cliente, atual);
                       });
-                      
+
                       const hasDevedores = Array.from(saldoPorCliente.values()).some(c => c.comprado > c.pago);
-                      
+
                       return !hasDevedores && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          <div className="flex flex-col items-center gap-2">
-                            <Users className="h-8 w-8 text-muted-foreground" />
-                            <p>Nenhum cliente com pagamentos pendentes</p>
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                            <div className="flex flex-col items-center gap-2">
+                              <Users className="h-8 w-8 text-muted-foreground" />
+                              <p>Nenhum cliente com pagamentos pendentes</p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
                       );
                     })()}
                   </TableBody>
@@ -1147,7 +1334,7 @@ const Relatorios = () => {
                     {(() => {
                       // Calcular totais por cliente
                       const totaisPorCliente = new Map();
-                      
+
                       (vendas.data || []).forEach(venda => {
                         const cliente = venda["Nome Cliente"];
                         const valor = toNumber(venda["Valor Total"]);
@@ -1155,7 +1342,7 @@ const Relatorios = () => {
                         atual.comprado += valor;
                         totaisPorCliente.set(cliente, atual);
                       });
-                      
+
                       (pagamentos.data || []).forEach(pag => {
                         const cliente = pag["Nome Cliente"];
                         const valor = toNumber(pag["Valor Pago"]);
@@ -1163,17 +1350,17 @@ const Relatorios = () => {
                         atual.pago += valor;
                         totaisPorCliente.set(cliente, atual);
                       });
-                      
+
                       return Array.from(totaisPorCliente.values())
                         .sort((a, b) => b.comprado - a.comprado)
                         .map((clienteData, index) => {
                           const totalComprado = clienteData.comprado;
                           const totalPago = clienteData.pago;
                           const saldo = totalComprado - totalPago;
-                          
+
                           // Buscar informações adicionais do cliente
                           const clienteInfo = (clientes.data || []).find(c => c["Nome"] === clienteData.nome);
-                        
+
                           return (
                             <TableRow key={index}>
                               <TableCell className="font-medium">{clienteData.nome}</TableCell>
@@ -1194,9 +1381,9 @@ const Relatorios = () => {
                                 )}
                               </TableCell>
                               <TableCell>
-                                <Button 
-                                  variant="link" 
-                                  size="sm" 
+                                <Button
+                                  variant="link"
+                                  size="sm"
                                   onClick={() => {
                                     if (clienteInfo) navigate(`/clientes/${clienteInfo["ID Cliente"]}`);
                                   }}
