@@ -268,7 +268,7 @@ const Estoque = () => {
             } else {
               const contentType = response.headers.get('content-type');
               let errorMsg = `Status ${response.status}`;
-              
+
               try {
                 if (contentType?.includes('application/json')) {
                   const errorData = await response.json();
@@ -283,7 +283,7 @@ const Estoque = () => {
                 errorMsg = `Erro ao processar resposta: ${response.statusText}`;
                 console.error(`❌ ${sku}: Parse Error`, e);
               }
-              
+
               errosDetalhados.push(`${sku}: ${errorMsg}`);
               erros++;
             }
@@ -339,7 +339,7 @@ const Estoque = () => {
             } else {
               const contentType = response.headers.get('content-type');
               let errorMsg = `Status ${response.status}`;
-              
+
               try {
                 if (contentType?.includes('application/json')) {
                   const errorData = await response.json();
@@ -354,7 +354,7 @@ const Estoque = () => {
                 errorMsg = `Erro ao processar resposta: ${response.statusText}`;
                 console.error(`❌ MP ${sku}: Parse Error`, e);
               }
-              
+
               errosDetalhados.push(`${sku}: ${errorMsg}`);
               erros++;
             }
