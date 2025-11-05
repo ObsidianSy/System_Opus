@@ -42,7 +42,7 @@ pagamentosRouter.get('/:id', async (req: Request, res: Response) => {
 // POST - Criar novo pagamento (com idempotency_key)
 pagamentosRouter.post('/', async (req: Request, res: Response) => {
     try {
-        const { id_pagamento, data_pagamento, id_cliente, nome_cliente, valor_pago, forma_pagamento, observacoes } = req.body;
+        const { id_pagamento, data_pagamento, nome_cliente, valor_pago, forma_pagamento, observacoes } = req.body;
 
         if (!data_pagamento || !valor_pago || !nome_cliente) {
             return res.status(400).json({ error: 'data_pagamento, valor_pago e nome_cliente são obrigatórios' });
@@ -52,11 +52,11 @@ pagamentosRouter.post('/', async (req: Request, res: Response) => {
         const idempotency_key = buildIdempotencyKey(data_pagamento, nome_cliente, valor_pago, forma_pagamento);
 
         const result = await pool.query(
-            `INSERT INTO obsidian.pagamentos (id, data_pagamento, id_cliente, nome_cliente, valor_pago, forma_pagamento, observacoes, idempotency_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `INSERT INTO obsidian.pagamentos (data_pagamento, nome_cliente, valor_pago, forma_pagamento, observacoes, idempotency_key)
+ VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (idempotency_key) DO NOTHING
        RETURNING *`,
-            [id_pagamento, data_pagamento, id_cliente, nome_cliente, valor_pago, forma_pagamento, observacoes, idempotency_key]
+            [data_pagamento, nome_cliente, valor_pago, forma_pagamento, observacoes, idempotency_key]
         );
 
         if (result.rows.length === 0) {
