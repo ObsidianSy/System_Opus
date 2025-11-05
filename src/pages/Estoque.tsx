@@ -69,14 +69,14 @@ const Estoque = () => {
   const navigate = useNavigate();
 
   // Use custom hook for products - sem auto-refresh para melhor performance
-  const { 
-    products: produtosAcabados, 
-    stats, 
-    categories: categorias, 
+  const {
+    products: produtosAcabados,
+    stats,
+    categories: categorias,
     types: tipos,
     isLoading,
-    refresh: refreshProducts 
-  } = useProducts({ 
+    refresh: refreshProducts
+  } = useProducts({
     autoLoad: true
   });
 
@@ -98,7 +98,7 @@ const Estoque = () => {
     try {
       const dadosMateriaPrima = await consultarDados('Estoque_MateriaPrima');
       console.log('Dados de matéria-prima recebidos:', dadosMateriaPrima);
-      
+
       if (dadosMateriaPrima && dadosMateriaPrima.length > 0) {
         setMateriasPrimas(dadosMateriaPrima);
         toast.success("Matéria-prima carregada", {
@@ -123,12 +123,12 @@ const Estoque = () => {
   const filteredMateriasPrimas = useMemo(() => {
     return materiasPrimas.filter(item => {
       const quantidade = item.quantidade_mp || item["Quantidade Atual"] || 0;
-      
+
       const matchesQuantity = filters.quantity === "todos" ? true :
         filters.quantity === "sem-estoque" ? quantidade === 0 :
-        filters.quantity === "estoque-baixo" ? quantidade > 0 && quantidade < 10 :
-        filters.quantity === "em-estoque" ? quantidade >= 10 : true;
-      
+          filters.quantity === "estoque-baixo" ? quantidade > 0 && quantidade < 10 :
+            filters.quantity === "em-estoque" ? quantidade >= 10 : true;
+
       return matchesQuantity;
     });
   }, [materiasPrimas, filters.quantity]);
@@ -144,26 +144,26 @@ const Estoque = () => {
 
   const exportarParaExcel = useCallback(() => {
     try {
-      const dadosParaExportar = activeTab === "estoque" 
+      const dadosParaExportar = activeTab === "estoque"
         ? filteredProdutosAcabados.map(p => ({
-            'SKU': p.SKU || p.sku || '',
-            'Nome do Produto': p["Nome Produto"] || p.nome || '',
-            'Categoria': p["Categoria"] || p.categoria || '',
-            'Tipo': p["Tipo Produto"] || p.tipo_produto || '',
-            'Quantidade': p["Quantidade Atual"] || p.quantidade || 0,
-            'Unidade': p["Unidade de Medida"] || p.unidade_medida || '',
-            'Preço Unitário': p["Preço Unitário"] || p.preco_unitario || 0,
-            'Valor Total': (p["Quantidade Atual"] || p.quantidade || 0) * (p["Preço Unitário"] || p.preco_unitario || 0)
-          }))
+          'SKU': p.SKU || p.sku || '',
+          'Nome do Produto': p["Nome Produto"] || p.nome || '',
+          'Categoria': p["Categoria"] || p.categoria || '',
+          'Tipo': p["Tipo Produto"] || p.tipo_produto || '',
+          'Quantidade': p["Quantidade Atual"] || p.quantidade || 0,
+          'Unidade': p["Unidade de Medida"] || p.unidade_medida || '',
+          'Preço Unitário': p["Preço Unitário"] || p.preco_unitario || 0,
+          'Valor Total': (p["Quantidade Atual"] || p.quantidade || 0) * (p["Preço Unitário"] || p.preco_unitario || 0)
+        }))
         : filteredMateriasPrimas.map(mp => ({
-            'SKU': mp["SKU Matéria-Prima"] || mp.sku_materia_prima || '',
-            'Nome da Matéria-Prima': mp["Nome Matéria-Prima"] || mp.nome_materia_prima || '',
-            'Categoria': mp["Categoria MP"] || mp.categoria_mp || '',
-            'Quantidade': mp["Quantidade Atual"] || mp.quantidade_mp || 0,
-            'Unidade': mp["Unidade de Medida"] || mp.unidade_mp || '',
-            'Custo Unitário': mp["Custo Unitário"] || mp.custo_unitario_mp || 0,
-            'Valor Total': (mp["Quantidade Atual"] || mp.quantidade_mp || 0) * (mp["Custo Unitário"] || mp.custo_unitario_mp || 0)
-          }));
+          'SKU': mp["SKU Matéria-Prima"] || mp.sku_materia_prima || '',
+          'Nome da Matéria-Prima': mp["Nome Matéria-Prima"] || mp.nome_materia_prima || '',
+          'Categoria': mp["Categoria MP"] || mp.categoria_mp || '',
+          'Quantidade': mp["Quantidade Atual"] || mp.quantidade_mp || 0,
+          'Unidade': mp["Unidade de Medida"] || mp.unidade_mp || '',
+          'Custo Unitário': mp["Custo Unitário"] || mp.custo_unitario_mp || 0,
+          'Valor Total': (mp["Quantidade Atual"] || mp.quantidade_mp || 0) * (mp["Custo Unitário"] || mp.custo_unitario_mp || 0)
+        }));
 
       if (dadosParaExportar.length === 0) {
         toast.warning("Nenhum dado para exportar");
@@ -173,13 +173,13 @@ const Estoque = () => {
       const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, activeTab === "estoque" ? "Produtos" : "Matéria-Prima");
-      
-      const fileName = activeTab === "estoque" 
+
+      const fileName = activeTab === "estoque"
         ? `estoque_produtos_${new Date().toISOString().split('T')[0]}.xlsx`
         : `estoque_materiaprima_${new Date().toISOString().split('T')[0]}.xlsx`;
-      
+
       XLSX.writeFile(wb, fileName);
-      
+
       toast.success("Exportação concluída", {
         description: `${dadosParaExportar.length} itens exportados para ${fileName}`
       });
@@ -194,7 +194,7 @@ const Estoque = () => {
     if (!file) return;
 
     setIsImporting(true);
-    
+
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
@@ -225,7 +225,7 @@ const Estoque = () => {
         for (const row of jsonData as any[]) {
           try {
             const sku = row.SKU || row.sku;
-            
+
             const payload = {
               nome_produto: row['Nome do Produto'] || row['Nome Produto'] || row.nome,
               categoria: row.Categoria || row.categoria,
@@ -265,7 +265,7 @@ const Estoque = () => {
         for (const row of jsonData as any[]) {
           try {
             const sku = row.SKU || row.sku;
-            
+
             const payload = {
               id_materia_prima: sku, // Usar SKU como ID se não tiver ID específico
               nome_materia_prima: row['Nome da Matéria-Prima'] || row['Nome Matéria-Prima'] || row.nome,
@@ -317,7 +317,7 @@ const Estoque = () => {
         toast.success("Importação concluída", {
           description: `${sucessos} itens atualizados${erros > 0 ? `, ${erros} com erro` : ''}`
         });
-        
+
         // Recarregar dados
         if (isProduto) {
           refreshProducts();
@@ -363,8 +363,8 @@ const Estoque = () => {
                 id="import-excel"
               />
               <label htmlFor="import-excel">
-                <Button 
-                  size="sm" 
+                <Button
+                  size="sm"
                   variant="outline"
                   disabled={isImporting}
                   className="gap-2 cursor-pointer"
@@ -378,8 +378,8 @@ const Estoque = () => {
               </label>
             </div>
 
-            <Button 
-              size="sm" 
+            <Button
+              size="sm"
               variant="outline"
               onClick={exportarParaExcel}
               className="gap-2"
@@ -398,7 +398,7 @@ const Estoque = () => {
                 <ProdutoForm onSuccess={refreshProducts} />
               </DialogContent>
             </Dialog>
-            
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
@@ -417,7 +417,7 @@ const Estoque = () => {
                     <MateriaPrimaForm onSuccess={() => carregarMateriaPrima()} />
                   </DialogContent>
                 </Dialog>
-                
+
                 <Dialog>
                   <DialogTrigger asChild>
                     <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
@@ -429,7 +429,7 @@ const Estoque = () => {
                     <EntradaProdutoForm onSuccess={refreshProducts} />
                   </DialogContent>
                 </Dialog>
-                
+
                 <Dialog>
                   <DialogTrigger asChild>
                     <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
@@ -441,14 +441,14 @@ const Estoque = () => {
                     <EntradaMateriaPrimaForm onSuccess={() => carregarMateriaPrima()} />
                   </DialogContent>
                 </Dialog>
-                
+
                 <DropdownMenuItem onClick={() => navigate('/receita-produto')}>
                   <Settings className="w-4 h-4 mr-2" />
                   Receitas
                 </DropdownMenuItem>
-                
+
                 <DropdownMenuSeparator />
-                
+
                 <DropdownMenuItem onClick={carregarDados} disabled={isLoading}>
                   <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                   Atualizar
@@ -471,16 +471,16 @@ const Estoque = () => {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-card rounded-lg border p-4">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-md bg-green-500/10 flex items-center justify-center">
                 <TrendingUp className="w-4 h-4 text-green-500" />
               </div>
-            <div>
-              <p className="text-xl font-semibold text-foreground">{formatCurrency(stats.totalValue)}</p>
-              <p className="text-xs text-muted-foreground">Valor Total (sem kits)</p>
-            </div>
+              <div>
+                <p className="text-xl font-semibold text-foreground">{formatCurrency(stats.totalValue)}</p>
+                <p className="text-xs text-muted-foreground">Valor Total (sem kits)</p>
+              </div>
             </div>
           </div>
 
@@ -526,7 +526,7 @@ const Estoque = () => {
               </SelectContent>
             </Select>
           </div>
-          
+
           <Select value={filters.category} onValueChange={setCategoryFilter}>
             <SelectTrigger className="w-40">
               <SelectValue placeholder="Categoria" />
@@ -538,7 +538,7 @@ const Estoque = () => {
               ))}
             </SelectContent>
           </Select>
-          
+
           <Select value={filters.type} onValueChange={setTypeFilter}>
             <SelectTrigger className="w-40">
               <SelectValue placeholder="Tipo" />
@@ -584,7 +584,7 @@ const Estoque = () => {
         <Dialog open={!!editingProduct} onOpenChange={() => setEditingProduct(null)}>
           <DialogContent className="max-w-4xl">
             {editingProduct && (
-              <ProdutoForm 
+              <ProdutoForm
                 produto={{
                   SKU: editingProduct.SKU || editingProduct.sku,
                   "Nome Produto": editingProduct["Nome Produto"] || editingProduct.nome,
@@ -607,7 +607,7 @@ const Estoque = () => {
         <Dialog open={!!editingMateriaPrima} onOpenChange={() => setEditingMateriaPrima(null)}>
           <DialogContent className="max-w-4xl">
             {editingMateriaPrima && (
-              <MateriaPrimaForm 
+              <MateriaPrimaForm
                 materiaPrima={{
                   sku: editingMateriaPrima["SKU Matéria-Prima"] || editingMateriaPrima.sku_materia_prima,
                   nome: editingMateriaPrima["Nome Matéria-Prima"] || editingMateriaPrima.nome_materia_prima,
@@ -619,7 +619,7 @@ const Estoque = () => {
                 onSuccess={() => {
                   setEditingMateriaPrima(null);
                   carregarMateriaPrima();
-                }} 
+                }}
               />
             )}
           </DialogContent>
