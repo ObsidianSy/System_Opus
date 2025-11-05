@@ -13,16 +13,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link, AlertCircle, Package } from "lucide-react";
 import { RelacionarSkuDialog } from "./RelacionarSkuDialog";
+import { FullKitRelationModal } from "./FullKitRelationModal";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const PendenciasTab = () => {
-  const { pendencias, isLoadingPendencias } = useFullData();
+  const { pendencias, isLoadingPendencias, refreshPendencias } = useFullData();
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [kitModalOpen, setKitModalOpen] = useState(false);
 
   const handleRelacionar = (item: any) => {
     setSelectedItem(item);
     setDialogOpen(true);
+  };
+
+  const handleRelacionarKit = (item: any) => {
+    setSelectedItem(item);
+    setKitModalOpen(true);
   };
 
   if (isLoadingPendencias) {
@@ -115,7 +122,7 @@ export const PendenciasTab = () => {
                       <TableHead>SKU Texto</TableHead>
                       <TableHead className="text-center w-[80px]">Qtd</TableHead>
                       <TableHead className="text-center w-[100px]">Status</TableHead>
-                      <TableHead className="text-right w-[180px]">Ações</TableHead>
+                      <TableHead className="text-right w-[280px]">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -137,14 +144,25 @@ export const PendenciasTab = () => {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            onClick={() => handleRelacionar(item)}
-                            className="bg-blue-600 hover:bg-blue-700"
-                          >
-                            <Link className="mr-2 h-4 w-4" />
-                            Relacionar SKU
-                          </Button>
+                          <div className="flex gap-2 justify-end">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleRelacionarKit(item)}
+                              className="border-purple-600 text-purple-600 hover:bg-purple-50"
+                            >
+                              <Package className="mr-2 h-4 w-4" />
+                              Kit
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => handleRelacionar(item)}
+                              className="bg-blue-600 hover:bg-blue-700"
+                            >
+                              <Link className="mr-2 h-4 w-4" />
+                              Relacionar SKU
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -157,11 +175,24 @@ export const PendenciasTab = () => {
       </div>
 
       {selectedItem && (
-        <RelacionarSkuDialog
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-          item={selectedItem}
-        />
+        <>
+          <RelacionarSkuDialog
+            open={dialogOpen}
+            onOpenChange={setDialogOpen}
+            item={selectedItem}
+          />
+          <FullKitRelationModal
+            open={kitModalOpen}
+            onOpenChange={setKitModalOpen}
+            rawId={selectedItem.full_raw_id}
+            skuOriginal={selectedItem.sku_texto}
+            onKitRelated={(sku) => {
+              console.log('Kit relacionado:', sku);
+              setKitModalOpen(false);
+              refreshPendencias(); // Atualiza a lista
+            }}
+          />
+        </>
       )}
     </>
   );

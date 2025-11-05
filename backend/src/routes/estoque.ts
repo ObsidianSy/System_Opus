@@ -96,7 +96,7 @@ estoqueRouter.post('/', async (req: Request, res: Response) => {
 
         // Insere produto (com is_kit)
         const produtoResult = await client.query(
-            `INSERT INTO obsidian.produtos (sku, nome, categoria, tipo_produto, quantidade_atual, unidade_medida, preco_unitario, is_kit)
+            `INSERT INTO obsidian.produtos (sku, nome, categoria, tipo_produto, quantidade_atual, unidade_medida, preco_unitario)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
             [sku, nome_produto, categoria, tipo_produto, quantidade_atual || 0, unidade_medida, preco_unitario || 0, isKit]
@@ -158,8 +158,8 @@ estoqueRouter.put('/:sku', async (req: Request, res: Response) => {
 
         // Upsert produto (com is_kit)
         const produtoResult = await client.query(
-            `INSERT INTO obsidian.produtos (sku, nome, categoria, tipo_produto, quantidade_atual, unidade_medida, preco_unitario, is_kit)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `INSERT INTO obsidian.produtos (sku, nome, categoria, tipo_produto, quantidade_atual, unidade_medida, preco_unitario)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (sku) 
        DO UPDATE SET 
          nome = EXCLUDED.nome,
@@ -168,10 +168,9 @@ estoqueRouter.put('/:sku', async (req: Request, res: Response) => {
          quantidade_atual = EXCLUDED.quantidade_atual,
          unidade_medida = EXCLUDED.unidade_medida,
          preco_unitario = EXCLUDED.preco_unitario,
-         is_kit = EXCLUDED.is_kit,
          atualizado_em = NOW()
        RETURNING *`,
-            [sku, nome_produto, categoria, tipo_produto, quantidade_atual, unidade_medida, preco_unitario, isKit]
+            [sku, nome_produto, categoria, tipo_produto, quantidade_atual, unidade_medida, preco_unitario]
         );
 
         // Atualiza componentes
@@ -337,3 +336,251 @@ estoqueRouter.patch('/:sku/quantidade', async (req: Request, res: Response) => {
         res.status(500).json({ error: 'Erro ao atualizar quantidade' });
     }
 });
+
+// POST - Buscar kit por composição (substitui webhook N8N)
+estoqueRouter.post('/kits/find-by-composition', async (req: Request, res: Response) => {
+    try {
+        // Aceita tanto 'componentes' quanto 'components' (compatibilidade)
+        const componentes = req.body.componentes || req.body.components;
+
+        console.log('🔍 [find-by-composition] Payload recebido:', req.body);
+        console.log('📦 [find-by-composition] Componentes extraídos:', componentes);
+
+        if (!componentes || !Array.isArray(componentes) || componentes.length === 0) {
+            console.log('❌ [find-by-composition] Componentes inválidos');
+            return res.status(400).json({ error: 'Componentes são obrigatórios' });
+        }
+
+        // Buscar kits que contenham EXATAMENTE esses componentes
+        // Converte array de componentes em formato para query
+        const componentSkus = componentes.map((c: any) => c.sku || c.sku_componente).filter(Boolean);
+
+        console.log('🎯 [find-by-composition] SKUs a buscar:', componentSkus);
+
+        if (componentSkus.length === 0) {
+            return res.status(400).json({ error: 'SKUs de componentes inválidos' });
+        }
+
+        // Query para encontrar kits que contenham os componentes
+        // Buscar no kit_bom (JSONB) ao invés de kit_components (que não existe)
+        const result = await pool.query(
+            `SELECT 
+                p.sku as kit_sku,
+                p.nome as kit_nome,
+                p.preco_unitario as kit_preco,
+                p.kit_bom as componentes_do_kit
+            FROM obsidian.produtos p
+            WHERE p.kit_bom IS NOT NULL
+              AND jsonb_array_length(p.kit_bom) = $1
+            ORDER BY p.sku
+            LIMIT 50`,
+            [componentSkus.length]
+        );
+
+        // Filtrar manualmente os kits que têm EXATAMENTE os componentes solicitados
+        const kitsMatch = result.rows.filter(kit => {
+            const kitComponents = kit.componentes_do_kit as any[];
+
+            // Verificar se tem a mesma quantidade de componentes
+            if (kitComponents.length !== componentSkus.length) return false;
+
+            // Verificar se todos os SKUs solicitados estão no kit
+            const kitSkus = kitComponents.map((c: any) => c.sku?.toUpperCase()).sort();
+            const requestedSkus = componentSkus.map((s: string) => s.toUpperCase()).sort();
+
+            return JSON.stringify(kitSkus) === JSON.stringify(requestedSkus);
+        });
+
+        if (kitsMatch.length === 0) {
+            return res.json({
+                sku_kit: null,
+                found: false,
+                message: 'Nenhum kit encontrado com essa composição exata',
+                kits: []
+            });
+        }
+
+        // Retorna o primeiro kit encontrado no formato esperado pelo frontend
+        const firstKit = kitsMatch[0];
+
+        res.json({
+            sku_kit: firstKit.kit_sku,
+            found: true,
+            kits: kitsMatch.map(row => ({
+                sku: row.kit_sku,
+                nome: row.kit_nome,
+                preco_unitario: parseFloat(row.kit_preco),
+                componentes: row.componentes_do_kit
+            }))
+        });
+
+    } catch (error) {
+        console.error('Erro ao buscar kit por composição:', error);
+        res.status(500).json({ error: 'Erro ao buscar kit por composição' });
+    }
+});
+
+// POST - Criar kit e relacionar (substitui webhook N8N)
+estoqueRouter.post('/kits/create-and-relate', async (req: Request, res: Response) => {
+    const client = await pool.connect();
+
+    try {
+        // Aceita 2 formatos:
+        // 1) { sku, nome, componentes, preco_unitario } (direto)
+        // 2) { raw_id, kit: { nome, categoria, preco_unitario }, components: [...] } (do frontend)
+
+        let sku = req.body.sku;
+        let nome = req.body.nome;
+        let componentes = req.body.componentes || req.body.components;
+        let preco_unitario = req.body.preco_unitario;
+        let raw_id = req.body.raw_id;
+
+        console.log('🎁 [create-and-relate] Payload recebido:', req.body);
+
+        // Se formato frontend (com kit e components)
+        if (req.body.kit) {
+            nome = req.body.kit.nome;
+            preco_unitario = req.body.kit.preco_unitario;
+        }
+
+        // Se não tem SKU, gera automaticamente baseado nos componentes
+        if (!sku && componentes && componentes.length > 0) {
+            const componentSkus = componentes
+                .map((c: any) => c.sku || c.sku_componente)
+                .filter(Boolean)
+                .sort()
+                .join('-');
+
+            sku = `KIT-${componentSkus.substring(0, 50)}`;
+            console.log('🔧 [create-and-relate] SKU gerado:', sku);
+        }
+
+        if (!nome || !componentes || !Array.isArray(componentes) || componentes.length === 0) {
+            console.log('❌ [create-and-relate] Dados inválidos:', { nome, componentes });
+            return res.status(400).json({ error: 'Nome e componentes são obrigatórios' });
+        }
+
+        await client.query('BEGIN');
+
+        // Criar o kit
+        // Temporariamente criar com kit_bom vazio (será preenchido depois)
+        const kitResult = await client.query(
+            `INSERT INTO obsidian.produtos (sku, nome, tipo_produto, quantidade_atual, unidade_medida, preco_unitario, ativo, kit_bom)
+     VALUES ($1, $2, 'KIT', 0, 'UN', $3, true, '[]'::jsonb)
+     ON CONFLICT (sku) DO UPDATE SET
+       nome = EXCLUDED.nome,
+       preco_unitario = EXCLUDED.preco_unitario,
+       atualizado_em = NOW()
+     RETURNING *`,
+            [sku, nome, preco_unitario || 0]
+        );
+
+        // Remover componentes antigos (caso seja update)
+        // Montar o array de componentes no formato { sku, qty }
+        const kitBomArray = [];
+        for (const comp of componentes) {
+            const compSku = comp.sku || comp.sku_componente;
+            const compQty = comp.q || comp.qty || comp.quantidade_por_kit || 1;
+
+            if (!compSku) continue;
+
+            console.log('📦 [create-and-relate] Processando componente:', { compSku, compQty });
+
+            // Verificar se componente existe
+            const componenteExists = await client.query(
+                'SELECT sku FROM obsidian.produtos WHERE sku = $1',
+                [compSku]
+            );
+
+            if (componenteExists.rows.length === 0) {
+                await client.query('ROLLBACK');
+                console.log('❌ [create-and-relate] Componente não existe:', compSku);
+                return res.status(400).json({
+                    error: `Componente ${compSku} não existe no estoque. Cadastre-o primeiro.`
+                });
+            }
+
+            // Adicionar ao array kit_bom
+            kitBomArray.push({ sku: compSku, qty: compQty });
+        }
+
+        // Atualizar a coluna kit_bom com os componentes
+        const kitBomJson = JSON.stringify(kitBomArray);
+        await client.query(
+            `UPDATE obsidian.produtos
+     SET kit_bom = $1::jsonb
+     WHERE sku = $2`,
+            [kitBomJson, sku]
+        );
+
+        console.log('✅ kit_bom atualizado:', kitBomJson);
+
+        // 🔥 AUTO-RELACIONAMENTO EM LOTE: Relacionar TODOS os itens pendentes com o mesmo nome
+        console.log('� [create-and-relate] Buscando TODOS os registros pendentes com nome:', nome);
+
+        const bulkUpdateResult = await client.query(
+            `UPDATE logistica.full_envio_raw 
+             SET matched_sku = $1, 
+                 status = 'matched',
+                 processed_at = NOW()
+             WHERE UPPER(sku_texto) = UPPER($2) 
+               AND (status = 'pending' OR matched_sku IS NULL)
+             RETURNING id, sku_texto, matched_sku`,
+            [sku, nome]
+        );
+
+        if (bulkUpdateResult.rows.length > 0) {
+            console.log(`✅ [create-and-relate] ${bulkUpdateResult.rows.length} registro(s) relacionado(s) automaticamente!`);
+            console.log('📦 IDs relacionados:', bulkUpdateResult.rows.map(r => r.id).join(', '));
+        } else {
+            console.log('⚠️ [create-and-relate] Nenhum registro pendente encontrado para relacionar');
+        }
+
+        // 🏷️ CRIAR ALIAS: Para que próximos pedidos sejam auto-relacionados na importação
+        console.log('🏷️ [create-and-relate] Criando alias:', nome, '→', sku);
+
+        try {
+            // Verificar se alias já existe
+            const aliasExists = await client.query(
+                `SELECT id FROM obsidian.sku_aliases 
+                 WHERE UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
+                       UPPER(REGEXP_REPLACE($1, '[^A-Z0-9]', '', 'g'))`,
+                [nome]
+            );
+
+            if (aliasExists.rows.length === 0) {
+                await client.query(
+                    `INSERT INTO obsidian.sku_aliases (alias_text, sku_produto, source)
+                     VALUES ($1, $2, 'kit_auto')
+                     ON CONFLICT DO NOTHING`,
+                    [nome, sku]
+                );
+                console.log('✅ [create-and-relate] Alias criado! Próximos pedidos serão auto-relacionados.');
+            } else {
+                console.log('ℹ️ [create-and-relate] Alias já existe, pulando criação.');
+            }
+        } catch (aliasError: any) {
+            console.log('⚠️ [create-and-relate] Erro ao criar alias (não crítico):', aliasError.message);
+        }
+
+        await client.query('COMMIT');
+
+        console.log(`✅ Kit ${sku} criado/atualizado com ${componentes.length} componentes`);
+
+        res.json({
+            success: true,
+            sku_kit: sku,
+            matched: !!raw_id,
+            kit: kitResult.rows[0],
+            componentes_count: componentes.length
+        });
+
+    } catch (error: any) {
+        await client.query('ROLLBACK');
+        console.error('Erro ao criar kit:', error);
+        res.status(500).json({ error: 'Erro ao criar kit', details: error.message });
+    } finally {
+        client.release();
+    }
+});
+

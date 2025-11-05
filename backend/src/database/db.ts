@@ -12,8 +12,12 @@ export const pool = new Pool({
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD,
     max: 20, // Máximo de conexões no pool
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    idleTimeoutMillis: 30000, // 30 segundos para conexão ociosa
+    connectionTimeoutMillis: 30000, // 30 segundos para conectar (aumentado de 2s -> 10s -> 30s)
+    query_timeout: 30000, // 30 segundos timeout para queries
+    keepAlive: true, // Mantém conexão ativa
+    keepAliveInitialDelayMillis: 10000, // Delay inicial do keep-alive
+    ssl: false // Desabilita SSL para conexão local
 });
 
 // Testa a conexão

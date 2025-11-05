@@ -14,8 +14,8 @@ const IMPORT_WEBHOOK_URL = '/api/envios';
 const READ_WEBHOOK_URL = '/api/envios';
 const AUTO_RELATE_URL = '/api/envios/relacionar';
 const RELATE_ITEM_URL = '/api/envios/relacionar';
-const KITS_FIND_URL = 'https://docker-n8n-webhook.q4xusi.easypanel.host/webhook/kits-find-by-composition';
-const KITS_CREATE_URL = 'https://docker-n8n-webhook.q4xusi.easypanel.host/webhook/kits-create-and-relate';
+const KITS_FIND_URL = '/api/estoque/kits/find-by-composition';
+const KITS_CREATE_URL = '/api/estoque/kits/create-and-relate';
 const EMITIR_VENDAS_URL = '/api/envios/emitir-vendas';
 const API_BASE_URL = '/api/upseller';
 

@@ -181,6 +181,6 @@ Sempre usar custo do produto no estoque e cliente interno como base de cálculo.
 Se o status mudar para cancelado, a venda deve ser removida integralmente.
 
 
-E tambem sempre que vc criar algo que use alguma funcionalidade do banco de dados como tabelas principalmente, consulta la pra voce ver como esta o nome pra nao colocar nomes errados nem campos errados colocar exatamente igual ta no BD.
+E tambem sempre que vc criar algo que use alguma funcionalidade do banco de dados como tabelas principalmente, consulta la pra voce ver como esta o nome pra nao colocar nomes errados nem campos errados colocar exatamente igual ta no BD. Resumo sempre roda o script backend/check-ml-tables-quick.js. Pra voce ver as tables.
 
 mais uma coisa caso vc tenha alguma duvida nao faca nada, pergunte antes, mas isso somente se vc realmente tiver alguma duvida, se nao pode seguir.

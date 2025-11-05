@@ -14,6 +14,7 @@ import type { FullEnvioPending, SkuSearchResult } from '@/hooks/useFullImportDat
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
+import { FullKitRelationModal } from '../full/FullKitRelationModal';
 
 const SOURCE_LABELS = {
   exact: { label: 'Exato', variant: 'default' as const },
@@ -46,6 +47,8 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
   const [isSearching, setIsSearching] = useState(false);
   const [isAutoRelating, setIsAutoRelating] = useState(false);
   const [isEmitting, setIsEmitting] = useState(false);
+  const [kitModalOpen, setKitModalOpen] = useState(false);
+  const [selectedItemForKit, setSelectedItemForKit] = useState<any>(null);
 
   const { toast } = useToast();
   const {
@@ -705,15 +708,32 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
                               />
                             </TableCell>
                             <TableCell className="text-center">
-                              <Button
-                                size="sm"
-                                onClick={() => handleMatchLine(itemKey)}
-                                disabled={!selectedSku}
-                                className="gap-2"
-                              >
-                                <Link className="h-4 w-4" />
-                                Relacionar
-                              </Button>
+                              <div className="flex gap-2 justify-center">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedItemForKit({
+                                      raw_id: itemKey,
+                                      sku_texto: item.sku_texto
+                                    });
+                                    setKitModalOpen(true);
+                                  }}
+                                  className="gap-2 border-purple-600 text-purple-600 hover:bg-purple-50"
+                                >
+                                  <Package className="h-4 w-4" />
+                                  Kit
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleMatchLine(itemKey)}
+                                  disabled={!selectedSku}
+                                  className="gap-2"
+                                >
+                                  <Link className="h-4 w-4" />
+                                  Relacionar
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -741,6 +761,24 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
           )}
         </CardContent>
       </Card>
+
+      {/* Modal de Kit */}
+      {selectedItemForKit && (
+        <FullKitRelationModal
+          open={kitModalOpen}
+          onOpenChange={setKitModalOpen}
+          rawId={selectedItemForKit.raw_id}
+          skuOriginal={selectedItemForKit.sku_texto}
+          onKitRelated={(sku) => {
+            console.log('Kit relacionado:', sku);
+            setKitModalOpen(false);
+            // Recarregar detalhes do envio
+            if (currentEnvio) {
+              loadEnvioDetails(currentEnvio.cliente, currentEnvio.envioNum);
+            }
+          }}
+        />
+      )}
     </div>
   );
 });

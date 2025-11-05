@@ -24,8 +24,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useFullData, Produto } from "@/hooks/useFullData";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FullKitRelationModal } from "./FullKitRelationModal";
 
 interface RelacionarSkuDialogProps {
   open: boolean;
@@ -48,6 +49,7 @@ export const RelacionarSkuDialog = ({
   const [skuOpen, setSkuOpen] = useState(false);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [kitModalOpen, setKitModalOpen] = useState(false);
 
   useEffect(() => {
     setAlias(item.sku_texto);
@@ -109,8 +111,8 @@ export const RelacionarSkuDialog = ({
                 >
                   {selectedSku
                     ? produtos.find((p) => p.sku === selectedSku)?.sku +
-                      " - " +
-                      produtos.find((p) => p.sku === selectedSku)?.nome
+                    " - " +
+                    produtos.find((p) => p.sku === selectedSku)?.nome
                     : "Selecione um SKU..."}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
@@ -170,6 +172,16 @@ export const RelacionarSkuDialog = ({
         <DialogFooter>
           <Button
             variant="outline"
+            onClick={() => {
+              setKitModalOpen(true);
+              onOpenChange(false);
+            }}
+          >
+            <Package className="mr-2 h-4 w-4" />
+            Relacionar como Kit
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={isRelacionando}
           >
@@ -183,6 +195,21 @@ export const RelacionarSkuDialog = ({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* Modal de Kit */}
+      <FullKitRelationModal
+        open={kitModalOpen}
+        onOpenChange={(open) => {
+          setKitModalOpen(open);
+          if (!open) onOpenChange(true); // Reabre o dialog principal
+        }}
+        rawId={item.full_raw_id}
+        skuOriginal={item.sku_texto}
+        onKitRelated={(sku) => {
+          console.log('Kit relacionado:', sku);
+          onOpenChange(false);
+        }}
+      />
     </Dialog>
   );
 };
