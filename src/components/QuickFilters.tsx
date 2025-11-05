@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Search, X, Filter, User, Package, Tag } from 'lucide-react';
+import { Search, X, Filter, User, Package, Tag, Store, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -12,6 +12,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { FilterState } from '@/hooks/useQuickFilters';
+import { useDateFilter } from '@/contexts/DateFilterContext';
 
 interface QuickFiltersProps {
   filters: FilterState;
@@ -21,6 +22,7 @@ interface QuickFiltersProps {
     clients?: string[];
     skus?: string[];
     statuses?: string[];
+    canais?: string[];
   };
   activeFiltersCount: number;
   className?: string;
@@ -38,7 +40,8 @@ export const QuickFilters: React.FC<QuickFiltersProps> = ({
   showDateFilter = true,
   customFilters
 }) => {
-  const { clients = [], skus = [], statuses = [] } = availableOptions;
+  const { clients = [], skus = [], statuses = [], canais = [] } = availableOptions;
+  const { formatDisplayRange } = useDateFilter();
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -48,7 +51,7 @@ export const QuickFilters: React.FC<QuickFiltersProps> = ({
         const searchInput = document.querySelector('[data-search-input]') as HTMLInputElement;
         searchInput?.focus();
       }
-      
+
       if (e.ctrlKey && e.key === 'u') {
         e.preventDefault();
         // Trigger upload action (implementar conforme necessário)
@@ -64,6 +67,7 @@ export const QuickFilters: React.FC<QuickFiltersProps> = ({
     { key: 'selectedClient', label: 'Cliente', value: filters.selectedClient, icon: User },
     { key: 'selectedSKU', label: 'SKU', value: filters.selectedSKU, icon: Package },
     { key: 'selectedStatus', label: 'Status', value: filters.selectedStatus, icon: Tag },
+    { key: 'selectedCanal', label: 'Canal', value: filters.selectedCanal, icon: Store },
   ].filter(chip => chip.value);
 
   return (
@@ -124,6 +128,27 @@ export const QuickFilters: React.FC<QuickFiltersProps> = ({
           </Select>
         )}
 
+        {/* Filtro por Canal */}
+        {canais.length > 0 && (
+          <Select
+            value={filters.selectedCanal}
+            onValueChange={(value) => updateFilter('selectedCanal', value === 'all' ? '' : value)}
+          >
+            <SelectTrigger className="w-[200px] glass-card border-primary/20">
+              <Store className="w-4 h-4 mr-2" />
+              <SelectValue placeholder="Canal/Loja" />
+            </SelectTrigger>
+            <SelectContent className="glass-card max-h-[300px]">
+              <SelectItem value="all">Todos os canais</SelectItem>
+              {canais.map((canal) => (
+                <SelectItem key={canal} value={canal}>
+                  {canal}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
         {/* Filtro por Status */}
         {statuses.length > 0 && (
           <Select
@@ -163,12 +188,24 @@ export const QuickFilters: React.FC<QuickFiltersProps> = ({
       </div>
 
       {/* Chips de filtros ativos */}
-      {filterChips.length > 0 && (
+      {(filterChips.length > 0 || showDateFilter) && (
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center text-sm text-muted-foreground mr-2">
             <Filter className="w-4 h-4 mr-1" />
             Filtros ativos:
           </div>
+
+          {/* Badge de data sempre visível */}
+          {showDateFilter && (
+            <Badge
+              variant="outline"
+              className="glass-card border-primary/30 text-primary"
+            >
+              <Calendar className="w-3 h-3 mr-1" />
+              {formatDisplayRange()}
+            </Badge>
+          )}
+
           {filterChips.map(({ key, label, value, icon: Icon }) => (
             <Badge
               key={key}

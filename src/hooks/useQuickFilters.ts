@@ -7,6 +7,7 @@ export interface FilterState {
   selectedClient: string;
   selectedSKU: string;
   selectedStatus: string;
+  selectedCanal: string;
   [key: string]: any;
 }
 
@@ -30,6 +31,7 @@ export const useQuickFilters = <T = any>(
     selectedClient: '',
     selectedSKU: '',
     selectedStatus: '',
+    selectedCanal: '',
     ...defaultFilters
   });
 
@@ -82,6 +84,7 @@ export const useQuickFilters = <T = any>(
       selectedClient: '',
       selectedSKU: '',
       selectedStatus: '',
+      selectedCanal: '',
       ...defaultFilters
     };
     setFilters(clearedFilters);
@@ -91,11 +94,11 @@ export const useQuickFilters = <T = any>(
   // Filtrar dados
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
-    
+
     return data.filter(item => {
       // Aplicar filtro de data (se aplicável)
       const dateParams = getQueryParams();
-      
+
       // Aplicar filtro customizado se fornecido
       if (filterFunction) {
         return filterFunction(item, filters);
@@ -103,7 +106,7 @@ export const useQuickFilters = <T = any>(
 
       // Filtro padrão básico
       const itemStr = JSON.stringify(item).toLowerCase();
-      const searchMatch = !filters.searchTerm || 
+      const searchMatch = !filters.searchTerm ||
         itemStr.includes(filters.searchTerm.toLowerCase());
 
       return searchMatch;
@@ -112,7 +115,7 @@ export const useQuickFilters = <T = any>(
 
   // Contadores para chips
   const activeFiltersCount = useMemo(() => {
-    return Object.values(filters).filter(value => 
+    return Object.values(filters).filter(value =>
       value !== '' && value !== null && value !== undefined
     ).length;
   }, [filters]);
@@ -124,6 +127,7 @@ export const useQuickFilters = <T = any>(
     const clients = new Set<string>();
     const skus = new Set<string>();
     const statuses = new Set<string>();
+    const canais = new Set<string>();
 
     data.forEach((item: any) => {
       // Extrair clientes
@@ -137,12 +141,17 @@ export const useQuickFilters = <T = any>(
       // Extrair status (adaptar conforme necessário)
       const status = item['Status'] || item['status'];
       if (status) statuses.add(status);
+
+      // Extrair canais
+      const canal = item['Canal'] || item['canal'];
+      if (canal) canais.add(canal);
     });
 
     return {
       clients: Array.from(clients).sort(),
       skus: Array.from(skus).sort(),
-      statuses: Array.from(statuses).sort()
+      statuses: Array.from(statuses).sort(),
+      canais: Array.from(canais).sort()
     };
   }, [data]);
 

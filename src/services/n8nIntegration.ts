@@ -348,7 +348,9 @@ const mapApiDataToFrontend = (data: any[], sheetName: string): any[] => {
         'Nome Produto': item.nome_produto,
         'Quantidade Vendida': parseFloat(item.quantidade_vendida) || 0,
         'Preço Unitário': parseFloat(item.preco_unitario) || 0,
-        'Valor Total': parseFloat(item.valor_total) || 0
+        'Valor Total': parseFloat(item.valor_total) || 0,
+        'Canal': item.canal,
+        'Pedido UID': item.pedido_uid
       }));
 
     case 'Pagamentos':

@@ -15,6 +15,8 @@ interface ProductListItem {
   status?: string;
   cliente?: string;
   dataVenda?: string;
+  canal?: string;
+  pedidoUid?: string;
   [key: string]: any;
 }
 
@@ -28,6 +30,8 @@ interface ProductListProps {
   showStatus?: boolean;
   showCustomer?: boolean;
   showDate?: boolean;
+  showChannel?: boolean;
+  showOrderId?: boolean;
   onItemClick?: (item: ProductListItem) => void;
 }
 
@@ -41,6 +45,8 @@ export const ProductList: React.FC<ProductListProps> = ({
   showStatus = false,
   showCustomer = false,
   showDate = false,
+  showChannel = false,
+  showOrderId = false,
   onItemClick
 }) => {
   if (!items || items.length === 0) {
@@ -131,32 +137,44 @@ export const ProductList: React.FC<ProductListProps> = ({
                   </Badge>
                 )}
 
-                 {showCategory && categoria && (
-                   <Badge variant="outline" className="text-xs">
-                     {categoria}
-                   </Badge>
-                 )}
+                {showCategory && categoria && (
+                  <Badge variant="outline" className="text-xs">
+                    {categoria}
+                  </Badge>
+                )}
 
-                 {showStatus && status && (
-                   <Badge
-                     variant={status === 'Baixo Estoque' ? "destructive" : "secondary"}
-                     className="text-xs"
-                   >
-                     {status}
-                   </Badge>
-                 )}
+                {showStatus && status && (
+                  <Badge
+                    variant={status === 'Baixo Estoque' ? "destructive" : "secondary"}
+                    className="text-xs"
+                  >
+                    {status}
+                  </Badge>
+                )}
 
-                 {showCustomer && item.cliente && (
-                   <Badge variant="outline" className="text-xs">
-                     Cliente: {item.cliente}
-                   </Badge>
-                 )}
+                {showCustomer && item.cliente && (
+                  <Badge variant="outline" className="text-xs">
+                    Cliente: {item.cliente}
+                  </Badge>
+                )}
 
-                 {showDate && item.dataVenda && (
-                   <Badge variant="secondary" className="text-xs">
-                     {parseDateLocal(item.dataVenda)?.toLocaleDateString('pt-BR') ?? '-'}
-                   </Badge>
-                 )}
+                {showDate && item.dataVenda && (
+                  <Badge variant="secondary" className="text-xs">
+                    {parseDateLocal(item.dataVenda)?.toLocaleDateString('pt-BR') ?? '-'}
+                  </Badge>
+                )}
+
+                {showChannel && item.canal && (
+                  <Badge variant="default" className="text-xs">
+                    🏪 {item.canal}
+                  </Badge>
+                )}
+
+                {showOrderId && item.pedidoUid && (
+                  <Badge variant="outline" className="text-xs font-mono">
+                    📦 {item.pedidoUid}
+                  </Badge>
+                )}
               </div>
             </div>
           </div>

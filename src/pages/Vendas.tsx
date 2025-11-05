@@ -7,7 +7,7 @@ import { useQuickFilters } from "@/hooks/useQuickFilters";
 import { ProductList } from "@/components/ProductList";
 import { notificationManager } from "@/components/NotificationManager";
 import DashboardCard from "@/components/DashboardCard";
-import { ShoppingCart, Plus, TrendingUp } from "lucide-react";
+import { ShoppingCart, Plus, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import VendaForm from "@/components/forms/VendaForm";
@@ -32,11 +32,17 @@ interface Venda {
   "Quantidade Vendida": number;
   "Preço Unitário": number;
   "Valor Total": number;
+  "Canal": string;
+  "Pedido UID": string;
 }
 
 const Vendas = () => {
   const { data: vendas, isLoading, refresh } = useApiDataWithFilters<Venda>('Vendas');
   const [isFormOpen, setIsFormOpen] = useState(false);
+
+  // Estado de paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   // Filtros rápidos
   const {
@@ -52,20 +58,23 @@ const Vendas = () => {
       const searchTerm = filters.searchTerm.toLowerCase();
       const cliente = venda['Nome Cliente']?.toLowerCase() || '';
       const sku = venda['SKU Produto']?.toLowerCase() || '';
-      
-      const matchesSearch = !searchTerm || 
+
+      const matchesSearch = !searchTerm ||
         cliente.includes(searchTerm) ||
         sku.includes(searchTerm);
 
-      const matchesClient = !filters.selectedClient || 
+      const matchesClient = !filters.selectedClient ||
         venda['Nome Cliente'] === filters.selectedClient;
 
-      const matchesSKU = !filters.selectedSKU || 
+      const matchesSKU = !filters.selectedSKU ||
         venda['SKU Produto'] === filters.selectedSKU;
 
-      return matchesSearch && matchesClient && matchesSKU;
+      const matchesCanal = !filters.selectedCanal ||
+        venda['Canal'] === filters.selectedCanal;
+
+      return matchesSearch && matchesClient && matchesSKU && matchesCanal;
     },
-    { 
+    {
       persistKey: 'vendas',
       defaultFilters: { selectedStatus: '' }
     }
@@ -80,17 +89,30 @@ const Vendas = () => {
     });
   }, [filteredData]);
 
+  // Paginação
+  const totalPages = Math.ceil(sortedData.length / pageSize);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    const end = start + pageSize;
+    return sortedData.slice(start, end);
+  }, [sortedData, currentPage, pageSize]);
+
+  // Reset para primeira página quando filtros mudarem
+  useMemo(() => {
+    setCurrentPage(1);
+  }, [filteredData.length]);
+
   const stats = useMemo(() => {
     const totalVendas = filteredData.reduce((acc, venda) => {
       const valor = toNumber(venda["Valor Total"]);
       return acc + valor;
     }, 0);
-    
+
     const totalQuantidade = filteredData.reduce((acc, venda) => {
       const qtd = toNumber(venda["Quantidade Vendida"]);
       return acc + qtd;
     }, 0);
-    
+
     console.log('📊 Estatísticas de Vendas:', {
       totalRegistros: filteredData.length,
       totalVendas,
@@ -102,7 +124,7 @@ const Vendas = () => {
         quantidadeNormalizada: toNumber(v["Quantidade Vendida"])
       }))
     });
-    
+
     return {
       totalVendas,
       numeroVendas: filteredData.length,
@@ -132,7 +154,7 @@ const Vendas = () => {
               Gestão e histórico de vendas
             </p>
           </div>
-          <Button 
+          <Button
             onClick={() => setIsFormOpen(true)}
             className="bg-primary hover:bg-primary-glow text-primary-foreground"
           >
@@ -185,16 +207,62 @@ const Vendas = () => {
               Histórico de Vendas ({sortedData.length}) • Mais recentes primeiro
             </h3>
           </div>
-          
+
+          {/* Controles de paginação */}
+          <div className="flex items-center justify-between mb-4 pb-4 border-b border-border/50">
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground">
+                Mostrando {Math.min((currentPage - 1) * pageSize + 1, sortedData.length)} - {Math.min(currentPage * pageSize, sortedData.length)} de {sortedData.length} resultados
+              </span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="px-3 py-1 text-sm bg-background border border-border/50 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value={25}>25 por página</option>
+                <option value={50}>50 por página</option>
+                <option value={100}>100 por página</option>
+                <option value={200}>200 por página</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm text-foreground font-medium px-3">
+                Página {currentPage} de {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
           <ProductList
-            items={sortedData.map(venda => ({
+            items={paginatedData.map(venda => ({
               sku: venda['SKU Produto'],
               nome: venda['Nome Produto'] || 'Produto não identificado',
               quantidade: venda['Quantidade Vendida'],
               preco: venda['Preço Unitário'],
               cliente: venda['Nome Cliente'],
               dataVenda: venda['Data Venda'],
-              valorTotal: venda['Valor Total']
+              valorTotal: venda['Valor Total'],
+              canal: venda['Canal'],
+              pedidoUid: venda['Pedido UID'],
             }))}
             showThumbnails={true}
             showQuantity={true}
@@ -203,6 +271,8 @@ const Vendas = () => {
             showStatus={false}
             showCustomer={true}
             showDate={true}
+            showChannel={true}
+            showOrderId={true}
           />
         </div>
       </div>
@@ -213,7 +283,7 @@ const Vendas = () => {
           <DialogHeader>
             <DialogTitle>Registrar Nova Venda</DialogTitle>
           </DialogHeader>
-          <VendaForm 
+          <VendaForm
             onSuccess={() => {
               setIsFormOpen(false);
               refresh();

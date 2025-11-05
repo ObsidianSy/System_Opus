@@ -8,10 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import Layout from "@/components/Layout";
 import { ProductsDataTable } from "@/components/tables/ProductsDataTable";
 import { RawMaterialsDataTable } from "@/components/tables/RawMaterialsDataTable";
-import { Plus, Package, RefreshCw, Settings, ArrowUp, MoreHorizontal, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
+import { Plus, Package, RefreshCw, Settings, ArrowUp, MoreHorizontal, TrendingUp, TrendingDown, AlertTriangle, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { consultarDados } from "@/services/n8nIntegration";
 import ProdutoForm from "@/components/forms/ProdutoForm";
+import * as XLSX from 'xlsx';
+import { Input } from "@/components/ui/input";
 import MateriaPrimaForm from "@/components/forms/MateriaPrimaForm";
 import EntradaProdutoForm from "@/components/forms/EntradaProdutoForm";
 import EntradaMateriaPrimaForm from "@/components/forms/EntradaMateriaPrimaForm";
@@ -63,6 +65,7 @@ const Estoque = () => {
   const [editingProduct, setEditingProduct] = useState<ProdutoAcabado | null>(null);
   const [editingMateriaPrima, setEditingMateriaPrima] = useState<MateriaPrima | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<ProdutoAcabado | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const navigate = useNavigate();
 
   // Use custom hook for products - sem auto-refresh para melhor performance
@@ -139,6 +142,206 @@ const Estoque = () => {
     navigate("/estoque/novo");
   };
 
+  const exportarParaExcel = useCallback(() => {
+    try {
+      const dadosParaExportar = activeTab === "estoque" 
+        ? filteredProdutosAcabados.map(p => ({
+            'SKU': p.SKU || p.sku || '',
+            'Nome do Produto': p["Nome Produto"] || p.nome || '',
+            'Categoria': p["Categoria"] || p.categoria || '',
+            'Tipo': p["Tipo Produto"] || p.tipo_produto || '',
+            'Quantidade': p["Quantidade Atual"] || p.quantidade || 0,
+            'Unidade': p["Unidade de Medida"] || p.unidade_medida || '',
+            'Preço Unitário': p["Preço Unitário"] || p.preco_unitario || 0,
+            'Valor Total': (p["Quantidade Atual"] || p.quantidade || 0) * (p["Preço Unitário"] || p.preco_unitario || 0)
+          }))
+        : filteredMateriasPrimas.map(mp => ({
+            'SKU': mp["SKU Matéria-Prima"] || mp.sku_materia_prima || '',
+            'Nome da Matéria-Prima': mp["Nome Matéria-Prima"] || mp.nome_materia_prima || '',
+            'Categoria': mp["Categoria MP"] || mp.categoria_mp || '',
+            'Quantidade': mp["Quantidade Atual"] || mp.quantidade_mp || 0,
+            'Unidade': mp["Unidade de Medida"] || mp.unidade_mp || '',
+            'Custo Unitário': mp["Custo Unitário"] || mp.custo_unitario_mp || 0,
+            'Valor Total': (mp["Quantidade Atual"] || mp.quantidade_mp || 0) * (mp["Custo Unitário"] || mp.custo_unitario_mp || 0)
+          }));
+
+      if (dadosParaExportar.length === 0) {
+        toast.warning("Nenhum dado para exportar");
+        return;
+      }
+
+      const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, activeTab === "estoque" ? "Produtos" : "Matéria-Prima");
+      
+      const fileName = activeTab === "estoque" 
+        ? `estoque_produtos_${new Date().toISOString().split('T')[0]}.xlsx`
+        : `estoque_materiaprima_${new Date().toISOString().split('T')[0]}.xlsx`;
+      
+      XLSX.writeFile(wb, fileName);
+      
+      toast.success("Exportação concluída", {
+        description: `${dadosParaExportar.length} itens exportados para ${fileName}`
+      });
+    } catch (error) {
+      console.error('Erro ao exportar:', error);
+      toast.error("Erro ao exportar planilha");
+    }
+  }, [activeTab, filteredProdutosAcabados, filteredMateriasPrimas]);
+
+  const importarDeExcel = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+      console.log('📊 Dados importados:', jsonData);
+
+      if (jsonData.length === 0) {
+        toast.warning("Planilha vazia", {
+          description: "Não há dados para importar"
+        });
+        setIsImporting(false);
+        return;
+      }
+
+      // Determinar se é produtos ou matéria-prima baseado nas colunas
+      const firstRow: any = jsonData[0];
+      const isProduto = 'Nome do Produto' in firstRow || 'Nome Produto' in firstRow;
+      const isMateriaPrima = 'Nome da Matéria-Prima' in firstRow || 'Nome Matéria-Prima' in firstRow;
+
+      let sucessos = 0;
+      let erros = 0;
+      const errosDetalhados: string[] = [];
+
+      if (isProduto) {
+        // Importar produtos
+        for (const row of jsonData as any[]) {
+          try {
+            const sku = row.SKU || row.sku;
+            
+            const payload = {
+              nome_produto: row['Nome do Produto'] || row['Nome Produto'] || row.nome,
+              categoria: row.Categoria || row.categoria,
+              tipo_produto: row.Tipo || row['Tipo Produto'] || row.tipo_produto,
+              quantidade_atual: Number(row.Quantidade || row['Quantidade Atual'] || row.quantidade || 0),
+              unidade_medida: row.Unidade || row['Unidade de Medida'] || row.unidade_medida,
+              preco_unitario: Number(row['Preço Unitário'] || row.preco_unitario || 0)
+            };
+
+            // Validação básica
+            if (!sku) {
+              errosDetalhados.push(`Linha sem SKU: ${JSON.stringify(row)}`);
+              erros++;
+              continue;
+            }
+
+            const response = await fetch(`/api/produtos/${sku}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+              sucessos++;
+            } else {
+              const errorData = await response.json();
+              errosDetalhados.push(`${sku}: ${errorData.error || 'Erro desconhecido'}`);
+              erros++;
+            }
+          } catch (error: any) {
+            errosDetalhados.push(`${row.SKU || 'SKU desconhecido'}: ${error.message}`);
+            erros++;
+          }
+        }
+      } else if (isMateriaPrima) {
+        // Importar matéria-prima
+        for (const row of jsonData as any[]) {
+          try {
+            const sku = row.SKU || row.sku;
+            
+            const payload = {
+              id_materia_prima: sku, // Usar SKU como ID se não tiver ID específico
+              nome_materia_prima: row['Nome da Matéria-Prima'] || row['Nome Matéria-Prima'] || row.nome,
+              categoria: row.Categoria || row.categoria,
+              quantidade_atual: Number(row.Quantidade || row['Quantidade Atual'] || row.quantidade || 0),
+              unidade_medida: row.Unidade || row['Unidade de Medida'] || row.unidade_medida,
+              preco_unitario: Number(row['Custo Unitário'] || row.preco_unitario || 0)
+            };
+
+            // Validação básica
+            if (!sku) {
+              errosDetalhados.push(`Linha sem SKU: ${JSON.stringify(row)}`);
+              erros++;
+              continue;
+            }
+
+            const response = await fetch(`/api/materia-prima/${sku}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+              sucessos++;
+            } else {
+              const errorData = await response.json();
+              errosDetalhados.push(`${sku}: ${errorData.error || 'Erro desconhecido'}`);
+              erros++;
+            }
+          } catch (error: any) {
+            errosDetalhados.push(`${row.SKU || 'SKU desconhecido'}: ${error.message}`);
+            erros++;
+          }
+        }
+      } else {
+        toast.error("Formato não reconhecido", {
+          description: "A planilha deve ter as colunas corretas para Produtos ou Matéria-Prima"
+        });
+        setIsImporting(false);
+        return;
+      }
+
+      // Exibir resultado
+      if (errosDetalhados.length > 0) {
+        console.error('❌ Erros na importação:', errosDetalhados);
+      }
+
+      if (sucessos > 0) {
+        toast.success("Importação concluída", {
+          description: `${sucessos} itens atualizados${erros > 0 ? `, ${erros} com erro` : ''}`
+        });
+        
+        // Recarregar dados
+        if (isProduto) {
+          refreshProducts();
+        } else {
+          carregarMateriaPrima();
+        }
+      } else {
+        toast.error("Falha na importação", {
+          description: `${erros} erros encontrados. Verifique o console para detalhes.`
+        });
+      }
+
+    } catch (error) {
+      console.error('Erro ao importar:', error);
+      toast.error("Erro ao processar planilha", {
+        description: error instanceof Error ? error.message : "Erro desconhecido"
+      });
+    } finally {
+      setIsImporting(false);
+      // Limpar o input para permitir reimportar o mesmo arquivo
+      event.target.value = '';
+    }
+  }, [refreshProducts, carregarMateriaPrima]);
+
   return (
     <Layout>
       <div className="space-y-8">
@@ -150,6 +353,41 @@ const Estoque = () => {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <div className="relative">
+              <Input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={importarDeExcel}
+                disabled={isImporting}
+                className="hidden"
+                id="import-excel"
+              />
+              <label htmlFor="import-excel">
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  disabled={isImporting}
+                  className="gap-2 cursor-pointer"
+                  asChild
+                >
+                  <span>
+                    <Upload className={`w-4 h-4 ${isImporting ? 'animate-bounce' : ''}`} />
+                    {isImporting ? 'Importando...' : 'Importar Excel'}
+                  </span>
+                </Button>
+              </label>
+            </div>
+
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={exportarParaExcel}
+              className="gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Exportar Excel
+            </Button>
+
             <Dialog>
               <DialogTrigger asChild>
                 <Button size="sm" className="bg-primary hover:bg-primary/90">

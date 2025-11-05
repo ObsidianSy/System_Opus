@@ -958,7 +958,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     const qty = parseFloat(row['Qtd. do Produto'] || 0);
                     const unitPrice = parseFloat(row['Preço de Produto'] || 0);
                     const customer = row['Nome de Comprador'] || '';
-                    const channel = row['Plataformas'] || row['Nome da Loja no UpSeller'] || 'ML';
+                    const channel = row['Nome da Loja no UpSeller'] || row['Plataformas'] || 'ML';
 
                     if (!sku || qty <= 0) {
                         skippedRows.push(i + 1);
