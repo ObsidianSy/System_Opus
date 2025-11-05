@@ -88,7 +88,7 @@ const ReceitaProduto = () => {
         consultarDados('Estoque_MateriaPrima'),
         consultarDados('Receita_Produto')
       ]);
-      
+
       setProdutos(Array.isArray(dadosProdutos) ? dadosProdutos : []);
       setMateriasPrimas(Array.isArray(dadosMateriaPrima) ? dadosMateriaPrima : []);
       setReceitas(Array.isArray(dadosReceitas) ? dadosReceitas : []);
@@ -121,7 +121,7 @@ const ReceitaProduto = () => {
   const handleMateriaPrimaChange = (index: number, field: string, value: string) => {
     setFormData(prev => ({
       ...prev,
-      materiasPrimas: prev.materiasPrimas.map((mp, i) => 
+      materiasPrimas: prev.materiasPrimas.map((mp, i) =>
         i === index ? { ...mp, [field]: value } : mp
       )
     }));
@@ -131,7 +131,7 @@ const ReceitaProduto = () => {
     try {
       const validMateriasPrimas = formData.materiasPrimas
         .filter(mp => mp.skuMateriaPrima && mp.quantidade && parseFloat(mp.quantidade) > 0);
-      
+
       if (validMateriasPrimas.length === 0) {
         toast.error("Adicione pelo menos uma matéria-prima com quantidade válida");
         return;
@@ -194,7 +194,7 @@ const ReceitaProduto = () => {
   const handleEditMateriaPrimaChange = (index: number, field: string, value: string) => {
     setEditFormData(prev => ({
       ...prev,
-      materiasPrimas: prev.materiasPrimas.map((mp, i) => 
+      materiasPrimas: prev.materiasPrimas.map((mp, i) =>
         i === index ? { ...mp, [field]: value } : mp
       )
     }));
@@ -204,7 +204,7 @@ const ReceitaProduto = () => {
     try {
       const validMateriasPrimas = editFormData.materiasPrimas
         .filter(mp => mp.skuMateriaPrima && mp.quantidade && parseFloat(mp.quantidade) > 0);
-      
+
       if (validMateriasPrimas.length === 0) {
         toast.error("Adicione pelo menos uma matéria-prima com quantidade válida");
         return;
@@ -280,13 +280,13 @@ const ReceitaProduto = () => {
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione o produto" />
                       </SelectTrigger>
-                       <SelectContent>
-                         {produtos.filter(produto => produto.SKU && produto.SKU.trim() !== "").map((produto) => (
-                           <SelectItem key={produto.SKU} value={produto.SKU}>
-                             {produto.SKU} - {produto["Nome Produto"] || ""}
-                           </SelectItem>
-                         ))}
-                       </SelectContent>
+                      <SelectContent>
+                        {produtos.filter(produto => produto.SKU && produto.SKU.trim() !== "").map((produto) => (
+                          <SelectItem key={produto.SKU} value={produto.SKU}>
+                            {produto.SKU} - {produto["Nome Produto"] || ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
                     </Select>
                   </div>
 
@@ -308,13 +308,13 @@ const ReceitaProduto = () => {
                               <SelectTrigger>
                                 <SelectValue placeholder="Selecione" />
                               </SelectTrigger>
-                               <SelectContent>
-                                 {materiasPrimas.filter(mp => mp["SKU Matéria-Prima"] && mp["SKU Matéria-Prima"].trim() !== "").map((materiaPrima) => (
-                                   <SelectItem key={materiaPrima["SKU Matéria-Prima"]} value={materiaPrima["SKU Matéria-Prima"]}>
-                                     {materiaPrima["SKU Matéria-Prima"]} - {materiaPrima["Nome Matéria-Prima"] || ""}
-                                   </SelectItem>
-                                 ))}
-                               </SelectContent>
+                              <SelectContent>
+                                {materiasPrimas.filter(mp => mp["SKU Matéria-Prima"] && mp["SKU Matéria-Prima"].trim() !== "").map((materiaPrima) => (
+                                  <SelectItem key={materiaPrima["SKU Matéria-Prima"]} value={materiaPrima["SKU Matéria-Prima"]}>
+                                    {materiaPrima["SKU Matéria-Prima"]} - {materiaPrima["Nome Matéria-Prima"] || ""}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
                             </Select>
                           </div>
 
@@ -425,7 +425,7 @@ const ReceitaProduto = () => {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Button variant="outline" size="sm" onClick={() => handleOpenEdit(receita["SKU Produto"]) }>
+                          <Button variant="outline" size="sm" onClick={() => handleOpenEdit(receita["SKU Produto"])}>
                             <Edit className="h-4 w-4" />
                           </Button>
                         </TableCell>
@@ -447,13 +447,13 @@ const ReceitaProduto = () => {
                     <SelectTrigger className="max-w-md">
                       <SelectValue placeholder="Selecione o produto" />
                     </SelectTrigger>
-                     <SelectContent>
-                       {produtos.filter(produto => produto.SKU && produto.SKU.trim() !== "").map((produto) => (
-                         <SelectItem key={produto.SKU} value={produto.SKU}>
-                           {produto.SKU} - {produto["Nome Produto"] || ""}
-                         </SelectItem>
-                       ))}
-                     </SelectContent>
+                    <SelectContent>
+                      {produtos.filter(produto => produto.SKU && produto.SKU.trim() !== "").map((produto) => (
+                        <SelectItem key={produto.SKU} value={produto.SKU}>
+                          {produto.SKU} - {produto["Nome Produto"] || ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
                 </div>
               </CardHeader>
@@ -466,7 +466,7 @@ const ReceitaProduto = () => {
                         {selectedProduct} - {getProdutoNome(selectedProduct)}
                       </h3>
                     </div>
-                    
+
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -491,7 +491,7 @@ const ReceitaProduto = () => {
                         ))}
                       </TableBody>
                     </Table>
-                    
+
                     {getReceitasPorProduto(selectedProduct).length === 0 && (
                       <div className="text-center py-8 text-muted-foreground">
                         <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />

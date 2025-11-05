@@ -12,15 +12,16 @@ receitaProdutoRouter.get('/', async (req: Request, res: Response) => {
         e.nome as nome_produto,
         json_agg(
           json_build_object(
-            'sku_materia_prima', rp.sku_materia_prima,
+            'sku_mp', rp.sku_mp,
             'quantidade_por_produto', rp.quantidade_por_produto,
             'unidade_medida', rp.unidade_medida,
-            'nome_materia_prima', mp.nome
+            'valor_unitario', rp.valor_unitario,
+            'nome_materia_prima', COALESCE(mp.nome, mp.nome_materia_prima, mp.id)
           ) ORDER BY rp.id
         ) as items
       FROM obsidian.receita_produto rp
       JOIN obsidian.produtos e ON rp.sku_produto = e.sku
-      JOIN obsidian.materia_prima mp ON rp.sku_materia_prima = mp.sku
+      LEFT JOIN obsidian.materia_prima mp ON rp.sku_mp = mp.sku OR rp.sku_mp = mp.id OR rp.sku_mp = mp.sku_materia_prima
       GROUP BY e.sku, e.nome
       ORDER BY e.nome
     `);
@@ -40,9 +41,9 @@ receitaProdutoRouter.get('/:sku', async (req: Request, res: Response) => {
         const result = await pool.query(`
       SELECT 
         rp.*,
-        mp.nome as nome_materia_prima
+        COALESCE(mp.nome, mp.nome_materia_prima, mp.id) as nome_materia_prima
       FROM obsidian.receita_produto rp
-      JOIN obsidian.materia_prima mp ON rp.sku_materia_prima = mp.sku
+      LEFT JOIN obsidian.materia_prima mp ON rp.sku_mp = mp.sku OR rp.sku_mp = mp.id OR rp.sku_mp = mp.sku_materia_prima
       WHERE rp.sku_produto = $1
       ORDER BY rp.id
     `, [sku]);
@@ -73,9 +74,9 @@ receitaProdutoRouter.post('/', async (req: Request, res: Response) => {
         // Insere nova receita
         for (const item of items) {
             await client.query(
-                `INSERT INTO obsidian.receita_produto (sku_produto, sku_materia_prima, quantidade_por_produto, unidade_medida)
-         VALUES ($1, $2, $3, $4)`,
-                [sku_produto, item.sku_materia_prima, item.quantidade_por_produto, item.unidade_medida]
+                `INSERT INTO obsidian.receita_produto (sku_produto, sku_mp, quantidade_por_produto, unidade_medida, valor_unitario)
+         VALUES ($1, $2, $3, $4, $5)`,
+                [sku_produto, item.sku_mp, item.quantidade_por_produto, item.unidade_medida, item.valor_unitario || 0]
             );
         }
 
