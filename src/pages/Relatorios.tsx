@@ -25,30 +25,120 @@ const Relatorios = () => {
   const [quantityFilter, setQuantityFilter] = useState<string>("todos");
   const [categoryFilter, setCategoryFilter] = useState<string>("todas");
   const [clienteFilter, setClienteFilter] = useState<string>("todos");
+  const [tipoFilter, setTipoFilter] = useState<string>("todos");
+  const [periodoGrafico, setPeriodoGrafico] = useState<'mensal' | 'diario'>('mensal');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
   const navigate = useNavigate();
   const { vendas, produtos, clientes, pagamentos } = useAppDataWithFilters();
   const { dateRange } = useDateFilter();
 
-  // Processar dados reais de vendas por mês com filtro de data
+  // Filtrar dados por múltiplos critérios (colocado antes para ser usado nos gráficos)
+  const dadosFiltrados = useMemo(() => {
+    // Filtrar produtos
+    const produtosFiltrados = (produtos.data || []).filter(item => {
+      const quantidade = toNumber(item["Quantidade Atual"]);
+      const categoria = item["Categoria"];
+      const tipoProduto = (item as any)["Tipo Produto"] || (item as any).tipo_produto;
+
+      const matchesQuantity = quantityFilter === "todos" ? true :
+        quantityFilter === "sem-estoque" ? quantidade === 0 :
+          quantityFilter === "estoque-baixo" ? quantidade > 0 && quantidade < 10 :
+            quantityFilter === "em-estoque" ? quantidade >= 10 : true;
+
+      const matchesCategory = categoryFilter === "todas" ? true : categoria === categoryFilter;
+      const matchesTipo = tipoFilter === "todos" ? true : tipoProduto === tipoFilter;
+
+      return matchesQuantity && matchesCategory && matchesTipo;
+    });
+
+    // Filtrar vendas por cliente e tipo de produto
+    const vendasFiltradas = (vendas.data || []).filter(venda => {
+      const cliente = venda["Nome Cliente"];
+      const sku = venda["SKU Produto"];
+
+      const matchesCliente = clienteFilter === "todos" ? true : cliente === clienteFilter;
+
+      // Buscar o tipo do produto para filtrar vendas
+      const produto = (produtos.data || []).find(p => p["SKU"] === sku);
+      const tipoProduto = (produto as any)?.["Tipo Produto"] || (produto as any)?.tipo_produto;
+      const matchesTipo = tipoFilter === "todos" ? true : tipoProduto === tipoFilter;
+
+      return matchesCliente && matchesTipo;
+    });
+
+    return { produtosFiltrados, vendasFiltradas };
+  }, [produtos.data, vendas.data, quantityFilter, categoryFilter, clienteFilter, tipoFilter]);
+
+  // Processar dados reais de vendas por mês com filtros aplicados
   const vendasPorMes = useMemo(() => {
-    return (vendas.data || []).reduce((acc, venda) => {
+    // Mapa base preenchendo todos os meses do período selecionado
+    const mapa = new Map<string, { key: string; name: string; valor: number; qtd: number }>();
+
+    const start = new Date(dateRange.startDate);
+    const end = new Date(dateRange.endDate);
+    start.setDate(1);
+    end.setDate(1);
+
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+      const label = cursor.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+      mapa.set(key, { key, name: label, valor: 0, qtd: 0 });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    // Agregar vendas filtradas por mês
+    dadosFiltrados.vendasFiltradas.forEach(venda => {
       const dataVenda = venda["Data Venda"];
-      if (!dataVenda) return acc;
+      if (!dataVenda) return;
 
-      const mes = new Date(dataVenda).toLocaleString('pt-BR', { month: 'short', year: 'numeric' });
-      const existing = acc.find(item => item.name === mes);
-      const valorTotal = toNumber(venda["Valor Total"]);
-
-      if (existing) {
-        existing.valor += valorTotal;
-      } else {
-        acc.push({ name: mes, valor: valorTotal });
+      const d = new Date(dataVenda);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const atual = mapa.get(key);
+      if (atual) {
+        atual.valor += toNumber(venda["Valor Total"]);
+        atual.qtd += toNumber(venda["Quantidade Vendida"]);
       }
-      return acc;
-    }, [] as any[]).sort((a, b) => new Date(a.name).getTime() - new Date(b.name).getTime());
-  }, [vendas.data]);
+    });
+
+    return Array.from(mapa.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [dadosFiltrados.vendasFiltradas, dateRange.startDate, dateRange.endDate]);
+
+  // Processar dados de vendas por dia
+  const vendasPorDia = useMemo(() => {
+    const mapa = new Map<string, { key: string; name: string; valor: number; qtd: number }>();
+
+    const start = new Date(dateRange.startDate);
+    const end = new Date(dateRange.endDate);
+
+    // Preencher todos os dias do período
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      const key = cursor.toISOString().split('T')[0];
+      const label = cursor.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+      mapa.set(key, { key, name: label, valor: 0, qtd: 0 });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    // Agregar vendas filtradas por dia
+    dadosFiltrados.vendasFiltradas.forEach(venda => {
+      const dataVenda = venda["Data Venda"];
+      if (!dataVenda) return;
+
+      const key = new Date(dataVenda).toISOString().split('T')[0];
+      const atual = mapa.get(key);
+      if (atual) {
+        atual.valor += toNumber(venda["Valor Total"]);
+        atual.qtd += toNumber(venda["Quantidade Vendida"]);
+      }
+    });
+
+    return Array.from(mapa.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [dadosFiltrados.vendasFiltradas, dateRange.startDate, dateRange.endDate]);
+
+  // Selecionar dados baseado no período escolhido
+  const dadosGraficoVendas = periodoGrafico === 'mensal' ? vendasPorMes : vendasPorDia;
 
   // Relatório de vendas por SKU (totalizado por data)
   const vendasPorSKU = useMemo(() => {
@@ -81,12 +171,12 @@ const Relatorios = () => {
     return Array.from(vendidosPorSKU.values()).sort((a, b) => b.valorTotal - a.valorTotal);
   }, [vendas.data]);
 
-  // Processar dados auxiliares para gráficos
+  // Processar dados auxiliares para gráficos com dados filtrados
   const dadosGraficos = useMemo(() => {
     const vendidosPorProduto = new Map();
     const vendidosPorCategoria = new Map();
 
-    (vendas.data || []).forEach(venda => {
+    dadosFiltrados.vendasFiltradas.forEach(venda => {
       const nome = venda["Nome Produto"];
       const sku = venda["SKU Produto"];
       const quantidade = toNumber(venda["Quantidade Vendida"]);
@@ -96,7 +186,7 @@ const Relatorios = () => {
       }
 
       const produto = (produtos.data || []).find(p => p["SKU"] === sku);
-      const categoria = produto?.["Categoria"] || "Sem Categoria";
+      const categoria = (produto as any)?.["Categoria"] || "Sem Categoria";
       vendidosPorCategoria.set(categoria, (vendidosPorCategoria.get(categoria) || 0) + quantidade);
     });
 
@@ -135,7 +225,7 @@ const Relatorios = () => {
     }
 
     return { produtosMaisVendidos, vendasPorCategoria };
-  }, [vendas.data, produtos.data]);
+  }, [dadosFiltrados.vendasFiltradas, produtos.data]);
 
   // Estatísticas principais
   const estatisticas = useMemo(() => {
@@ -200,6 +290,10 @@ const Relatorios = () => {
     (produtos.data || []).map(p => p["Categoria"]).filter(Boolean)
   ));
 
+  const tiposProduto = Array.from(new Set(
+    (produtos.data || []).map(p => (p as any)["Tipo Produto"] || (p as any).tipo_produto).filter(Boolean)
+  ));
+
   const clientesUnicos = Array.from(new Set(
     (vendas.data || []).map(v => v["Nome Cliente"]).filter(Boolean)
   ));
@@ -207,33 +301,9 @@ const Relatorios = () => {
   // Reset página quando filtros mudam
   useMemo(() => {
     setCurrentPage(1);
-  }, [quantityFilter, categoryFilter, clienteFilter]);
+  }, [quantityFilter, categoryFilter, clienteFilter, tipoFilter]);
 
-  // Filtrar dados por múltiplos critérios
-  const dadosFiltrados = useMemo(() => {
-    // Filtrar produtos
-    const produtosFiltrados = (produtos.data || []).filter(item => {
-      const quantidade = toNumber(item["Quantidade Atual"]);
-      const categoria = item["Categoria"];
 
-      const matchesQuantity = quantityFilter === "todos" ? true :
-        quantityFilter === "sem-estoque" ? quantidade === 0 :
-          quantityFilter === "estoque-baixo" ? quantidade > 0 && quantidade < 10 :
-            quantityFilter === "em-estoque" ? quantidade >= 10 : true;
-
-      const matchesCategory = categoryFilter === "todas" ? true : categoria === categoryFilter;
-
-      return matchesQuantity && matchesCategory;
-    });
-
-    // Filtrar vendas por cliente
-    const vendasFiltradas = (vendas.data || []).filter(venda => {
-      const cliente = venda["Nome Cliente"];
-      return clienteFilter === "todos" ? true : cliente === clienteFilter;
-    });
-
-    return { produtosFiltrados, vendasFiltradas };
-  }, [produtos.data, vendas.data, quantityFilter, categoryFilter, clienteFilter]);
 
   // Função para exportar relatório de vendas por SKU em CSV
   const exportarVendasPorSKUCSV = () => {
@@ -591,13 +661,24 @@ const Relatorios = () => {
             <div className="grid lg:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5" />
-                    Vendas por Mês
-                  </CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart3 className="h-5 w-5" />
+                      Vendas {periodoGrafico === 'mensal' ? 'por Mês' : 'por Dia'}
+                    </CardTitle>
+                    <Select value={periodoGrafico} onValueChange={(value: 'mensal' | 'diario') => setPeriodoGrafico(value)}>
+                      <SelectTrigger className="w-[140px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mensal">Por Mês</SelectItem>
+                        <SelectItem value="diario">Por Dia</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  <VendasPorMesChart data={vendasPorMes} />
+                  <VendasPorMesChart data={dadosGraficoVendas} />
                 </CardContent>
               </Card>
 
@@ -638,7 +719,7 @@ const Relatorios = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">Cliente</label>
                     <Select value={clienteFilter} onValueChange={setClienteFilter}>
@@ -649,6 +730,21 @@ const Relatorios = () => {
                         <SelectItem value="todos">Todos os clientes</SelectItem>
                         {clientesUnicos.map(cliente => (
                           <SelectItem key={cliente} value={cliente}>{cliente}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Tipo de Produto</label>
+                    <Select value={tipoFilter} onValueChange={setTipoFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todos os tipos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos">Todos os tipos</SelectItem>
+                        {tiposProduto.map(tipo => (
+                          <SelectItem key={tipo} value={tipo}>{tipo}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -675,6 +771,7 @@ const Relatorios = () => {
                       onClick={() => {
                         setClienteFilter("todos");
                         setCategoryFilter("todas");
+                        setTipoFilter("todos");
                       }}
                       className="w-full"
                     >
@@ -686,10 +783,21 @@ const Relatorios = () => {
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle>Vendas por Mês</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Vendas {periodoGrafico === 'mensal' ? 'por Mês' : 'por Dia'}</CardTitle>
+                  <Select value={periodoGrafico} onValueChange={(value: 'mensal' | 'diario') => setPeriodoGrafico(value)}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mensal">Por Mês</SelectItem>
+                      <SelectItem value="diario">Por Dia</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </CardHeader>
               <CardContent>
-                <VendasPorMesChart data={vendasPorMes} />
+                <VendasPorMesChart data={dadosGraficoVendas} />
               </CardContent>
             </Card>
 
@@ -891,7 +999,7 @@ const Relatorios = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">Quantidade</label>
                     <Select value={quantityFilter} onValueChange={setQuantityFilter}>
@@ -903,6 +1011,21 @@ const Relatorios = () => {
                         <SelectItem value="sem-estoque">Sem estoque (0)</SelectItem>
                         <SelectItem value="estoque-baixo">Estoque baixo (&lt; 10)</SelectItem>
                         <SelectItem value="em-estoque">Em estoque (≥ 10)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Tipo de Produto</label>
+                    <Select value={tipoFilter} onValueChange={setTipoFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todos os tipos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos">Todos os tipos</SelectItem>
+                        {tiposProduto.map(tipo => (
+                          <SelectItem key={tipo} value={tipo}>{tipo}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
