@@ -184,3 +184,9 @@ Se o status mudar para cancelado, a venda deve ser removida integralmente.
 E tambem sempre que vc criar algo que use alguma funcionalidade do banco de dados como tabelas principalmente, consulta la pra voce ver como esta o nome pra nao colocar nomes errados nem campos errados colocar exatamente igual ta no BD. Resumo sempre roda o script backend/check-ml-tables-quick.js. Pra voce ver as tables.
 
 mais uma coisa caso vc tenha alguma duvida nao faca nada, pergunte antes, mas isso somente se vc realmente tiver alguma duvida, se nao pode seguir.
+
+
+Sempre que voce for fazer alguma coisa no codigo ou criar algo, voce nunca deve mexer em outras coisas apenas no que foi pedido, pra evitar de quebrar o codigo, mts vezes vc faz algo e outra para de funcionar, as vezes com nome de tabelas esass coisas, entao vamos evitar.
+
+
+Nova regra, sempre olha o arquivo tabela-sql.md. La vc vai ter uma noçao de todo slq do banco.

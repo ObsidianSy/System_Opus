@@ -24,6 +24,7 @@ import ImportPlanilha from "./pages/ImportPlanilha";
 import ImportPlanilhaFull from "./pages/ImportPlanilhaFull";
 import FullEnvios from "./pages/FullEnvios";
 import ActivityLogs from "./pages/ActivityLogs";
+import Devolucoes from "./pages/Devolucoes";
 import Login from "./pages/Login";
 
 const queryClient = new QueryClient({
@@ -67,6 +68,9 @@ const App = () => (
 
                   {/* Rota de Pagamentos */}
                   <Route path="/pagamentos" element={<PrivateRoute><Pagamentos /></PrivateRoute>} />
+
+                  {/* Rota de Devoluções */}
+                  <Route path="/devolucoes" element={<PrivateRoute><Devolucoes /></PrivateRoute>} />
 
                   {/* Rota de Relatórios */}
                   <Route path="/relatorios" element={<PrivateRoute><Relatorios /></PrivateRoute>} />

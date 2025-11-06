@@ -3,13 +3,22 @@ import { pool } from '../database/db';
 
 export const vendasRouter = Router();
 
-// GET - Listar todas as vendas
+// GET - Listar todas as vendas (com filtro opcional por SKU)
 vendasRouter.get('/', async (req: Request, res: Response) => {
     try {
-        const result = await pool.query(`
-      SELECT * FROM obsidian.vendas
-      ORDER BY data_venda DESC
-    `);
+        const { sku_produto } = req.query;
+
+        let query = 'SELECT * FROM obsidian.vendas';
+        let params: any[] = [];
+
+        if (sku_produto) {
+            query += ' WHERE sku_produto = $1';
+            params.push(sku_produto);
+        }
+
+        query += ' ORDER BY data_venda DESC';
+
+        const result = await pool.query(query, params);
 
         res.json(result.rows);
     } catch (error) {

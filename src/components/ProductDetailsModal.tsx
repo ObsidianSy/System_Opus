@@ -6,9 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ModernDataTable, Column } from "@/components/tables/ModernDataTable";
 import { Package, TrendingUp, TrendingDown, Calendar, Edit } from "lucide-react";
-import { consultarDados } from "@/services/n8nIntegration";
 import { toast } from "sonner";
 import { toNumber, formatCurrency } from "@/utils/formatters";
+import { API_BASE_URL } from "@/config/api";
 
 interface ProdutoAcabado {
   sku?: string;
@@ -83,29 +83,34 @@ export const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
 
   const carregarDadosProduto = async () => {
     if (!sku) return;
-    
+
     setIsLoading(true);
     try {
-      // Carregar movimentações de estoque
-      const dadosMovimentacoes = await consultarDados('Movimentacoes_Estoque');
-      const movimentacoesProduto = (dadosMovimentacoes || []).filter(
-        (mov: any) => mov.SKU === sku || mov.sku === sku
-      );
-      setMovimentacoes(movimentacoesProduto);
+      // Carregar movimentações de estoque via API REST
+      const resMovimentacoes = await fetch(`${API_BASE_URL}/api/estoque/movimentacoes/${sku}`);
+      if (resMovimentacoes.ok) {
+        const dadosMovimentacoes = await resMovimentacoes.json();
+        setMovimentacoes(Array.isArray(dadosMovimentacoes) ? dadosMovimentacoes : []);
+      } else {
+        console.warn('Nenhuma movimentação encontrada');
+        setMovimentacoes([]);
+      }
 
-      // Carregar vendas do produto
-      const dadosVendas = await consultarDados('Vendas');
-      const vendasProduto = (dadosVendas || []).filter((venda: any) => 
-        venda.items?.some((item: any) => item["SKU Produto"] === sku)
-      ).map((venda: any) => ({
-        ...venda,
-        item_produto: venda.items?.find((item: any) => item["SKU Produto"] === sku)
-      }));
-      setVendas(vendasProduto);
+      // Carregar vendas do produto via API REST
+      const resVendas = await fetch(`${API_BASE_URL}/api/vendas?sku_produto=${sku}`);
+      if (resVendas.ok) {
+        const dadosVendas = await resVendas.json();
+        setVendas(Array.isArray(dadosVendas) ? dadosVendas : []);
+      } else {
+        console.warn('Nenhuma venda encontrada');
+        setVendas([]);
+      }
 
     } catch (error) {
       console.error('Erro ao carregar dados do produto:', error);
       toast.error("Erro ao carregar histórico do produto");
+      setMovimentacoes([]);
+      setVendas([]);
     } finally {
       setIsLoading(false);
     }
@@ -147,34 +152,30 @@ export const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
 
   const vendasColumns: Column<any>[] = [
     {
-      key: 'Data Venda',
+      key: 'data_venda',
       label: 'Data',
       sortable: true,
       render: (value) => parseDateLocal(value)?.toLocaleDateString('pt-BR') || '-'
     },
     {
-      key: 'Nome Cliente',
+      key: 'nome_cliente',
       label: 'Cliente',
       render: (value) => value || '-'
     },
     {
-      key: 'item_produto',
+      key: 'quantidade_vendida',
       label: 'Quantidade',
-      render: (value) => value?.["Quantidade Vendida"] || '-'
+      render: (value) => value || '-'
     },
     {
-      key: 'item_produto',
+      key: 'preco_unitario',
       label: 'Valor Unit.',
-      render: (value) => formatCurrency(toNumber(value?.["Preço Unitário"]))
+      render: (value) => formatCurrency(toNumber(value))
     },
     {
-      key: 'item_produto',
+      key: 'preco_total',
       label: 'Total',
-      render: (value) => {
-        const qty = toNumber(value?.["Quantidade Vendida"]);
-        const price = toNumber(value?.["Preço Unitário"]);
-        return formatCurrency(qty * price);
-      }
+      render: (value) => formatCurrency(toNumber(value))
     }
   ];
 
@@ -186,8 +187,8 @@ export const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
     .filter(m => m.tipo === 'Saída')
     .reduce((acc, m) => acc + (Number(m.quantidade) || 0), 0);
 
-  const totalVendido = vendas.reduce((acc, venda) => 
-    acc + (Number(venda.item_produto?.["Quantidade Vendida"]) || 0), 0);
+  const totalVendido = vendas.reduce((acc, venda) =>
+    acc + (Number(venda.quantidade_vendida) || 0), 0);
 
   if (!produto) return null;
 

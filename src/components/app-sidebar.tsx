@@ -12,7 +12,8 @@ import {
   User2,
   Truck,
   LogOut,
-  Activity
+  Activity,
+  PackageX
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 
@@ -69,6 +70,11 @@ const data = {
       title: "Pagamentos",
       url: "/pagamentos",
       icon: Wallet,
+    },
+    {
+      title: "Devoluções",
+      url: "/devolucoes",
+      icon: PackageX,
     },
     {
       title: "Receitas",

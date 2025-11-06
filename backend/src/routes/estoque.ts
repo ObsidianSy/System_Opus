@@ -464,6 +464,7 @@ estoqueRouter.post('/kits/create-and-relate', async (req: Request, res: Response
 
         // Criar o kit
         // Temporariamente criar com kit_bom vazio (será preenchido depois)
+        console.log('📝 [create-and-relate] Inserindo kit:', { sku, nome, preco_unitario });
         const kitResult = await client.query(
             `INSERT INTO obsidian.produtos (sku, nome, tipo_produto, quantidade_atual, unidade_medida, preco_unitario, ativo, kit_bom)
      VALUES ($1, $2, 'KIT', 0, 'UN', $3, true, '[]'::jsonb)
@@ -474,6 +475,8 @@ estoqueRouter.post('/kits/create-and-relate', async (req: Request, res: Response
      RETURNING *`,
             [sku, nome, preco_unitario || 0]
         );
+
+        console.log('✅ [create-and-relate] Kit inserido/atualizado:', kitResult.rows[0]?.sku);
 
         // Remover componentes antigos (caso seja update)
         // Montar o array de componentes no formato { sku, qty }
@@ -506,6 +509,7 @@ estoqueRouter.post('/kits/create-and-relate', async (req: Request, res: Response
 
         // Atualizar a coluna kit_bom com os componentes
         const kitBomJson = JSON.stringify(kitBomArray);
+        console.log('📝 [create-and-relate] Atualizando kit_bom:', kitBomJson);
         await client.query(
             `UPDATE obsidian.produtos
      SET kit_bom = $1::jsonb
@@ -544,16 +548,29 @@ estoqueRouter.post('/kits/create-and-relate', async (req: Request, res: Response
             const aliasExists = await client.query(
                 `SELECT id FROM obsidian.sku_aliases 
                  WHERE UPPER(REGEXP_REPLACE(alias_text, '[^A-Z0-9]', '', 'g')) = 
-                       UPPER(REGEXP_REPLACE($1, '[^A-Z0-9]', '', 'g'))`,
-                [nome]
+                       UPPER(REGEXP_REPLACE($1, '[^A-Z0-9]', '', 'g'))
+                   AND stock_sku = $2`,
+                [nome, sku]
             );
 
             if (aliasExists.rows.length === 0) {
+                // Precisamos de client_id - vamos buscar do raw_id se disponível, senão usar 1 (default)
+                let clientId = 1;
+                if (raw_id) {
+                    const clientCheck = await client.query(
+                        `SELECT client_id FROM public.raw_export_orders WHERE id = $1`,
+                        [raw_id]
+                    );
+                    if (clientCheck.rows.length > 0 && clientCheck.rows[0].client_id) {
+                        clientId = clientCheck.rows[0].client_id;
+                    }
+                }
+
                 await client.query(
-                    `INSERT INTO obsidian.sku_aliases (alias_text, sku_produto, source)
-                     VALUES ($1, $2, 'kit_auto')
+                    `INSERT INTO obsidian.sku_aliases (client_id, alias_text, stock_sku, confidence_default, times_used, created_at)
+                     VALUES ($1, $2, $3, 1.0, 0, CURRENT_TIMESTAMP)
                      ON CONFLICT DO NOTHING`,
-                    [nome, sku]
+                    [clientId, nome, sku]
                 );
                 console.log('✅ [create-and-relate] Alias criado! Próximos pedidos serão auto-relacionados.');
             } else {
@@ -563,7 +580,9 @@ estoqueRouter.post('/kits/create-and-relate', async (req: Request, res: Response
             console.log('⚠️ [create-and-relate] Erro ao criar alias (não crítico):', aliasError.message);
         }
 
+        console.log('💾 [create-and-relate] Executando COMMIT...');
         await client.query('COMMIT');
+        console.log('✅ [create-and-relate] COMMIT executado com sucesso!');
 
         console.log(`✅ Kit ${sku} criado/atualizado com ${componentes.length} componentes`);
 
@@ -577,10 +596,44 @@ estoqueRouter.post('/kits/create-and-relate', async (req: Request, res: Response
 
     } catch (error: any) {
         await client.query('ROLLBACK');
-        console.error('Erro ao criar kit:', error);
-        res.status(500).json({ error: 'Erro ao criar kit', details: error.message });
+        console.error('❌ [create-and-relate] Erro ao criar kit:', error);
+        console.error('   Stack:', error.stack);
+        res.status(500).json({
+            error: 'Erro ao criar kit',
+            details: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     } finally {
         client.release();
     }
 });
 
+// GET - Buscar movimentações de estoque por SKU
+estoqueRouter.get('/movimentacoes/:sku', async (req: Request, res: Response) => {
+    try {
+        const { sku } = req.params;
+
+        const result = await pool.query(`
+            SELECT 
+                id,
+                sku,
+                tipo,
+                quantidade,
+                data_movimentacao as data,
+                origem_tabela,
+                origem_id,
+                observacao as motivo,
+                usuario_id,
+                criado_em
+            FROM obsidian.estoque_movimentos
+            WHERE sku = $1
+            ORDER BY data_movimentacao DESC, criado_em DESC
+            LIMIT 100
+        `, [sku]);
+
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Erro ao buscar movimentações:', error);
+        res.status(500).json({ error: 'Erro ao buscar movimentações' });
+    }
+});
