@@ -22,6 +22,7 @@ estoqueRouter.get('/', async (req: Request, res: Response) => {
         e.kit_bom,
         e.is_kit,
         e.kit_bom_hash,
+        pf.foto_url,
         COALESCE(
           json_agg(
             json_build_object(
@@ -32,7 +33,8 @@ estoqueRouter.get('/', async (req: Request, res: Response) => {
         ) as componentes
       FROM obsidian.produtos e
       LEFT JOIN obsidian.kit_components ck ON e.sku = ck.kit_sku
-      GROUP BY e.id, e.sku, e.nome, e.categoria, e.tipo_produto, e.quantidade_atual, e.unidade_medida, e.preco_unitario, e.ativo, e.criado_em, e.atualizado_em, e.kit_bom, e.is_kit, e.kit_bom_hash
+      LEFT JOIN obsidian.produto_fotos pf ON obsidian.extrair_produto_base(e.sku) = pf.produto_base
+      GROUP BY e.id, e.sku, e.nome, e.categoria, e.tipo_produto, e.quantidade_atual, e.unidade_medida, e.preco_unitario, e.ativo, e.criado_em, e.atualizado_em, e.kit_bom, e.is_kit, e.kit_bom_hash, pf.foto_url
       ORDER BY e.criado_em DESC
     `);
 

@@ -1288,12 +1288,13 @@ async function emitirVendasML(params: { import_id: string; user_email?: string; 
         [import_id]
     );
 
-    // A função agora retorna: vendas_inseridas, pedidos_processados, pedidos_cancelados_ignorados, vendas_revertidas
+    // A função agora retorna: vendas_inseridas, pedidos_processados, pedidos_cancelados_ignorados, vendas_revertidas, devolucoes_criadas
     const stats = result.rows[0] || {
         vendas_inseridas: 0,
         pedidos_processados: 0,
         pedidos_cancelados_ignorados: 0,
-        vendas_revertidas: 0
+        vendas_revertidas: 0,
+        devolucoes_criadas: 0
     };
 
     const salesCount = await pool.query(
@@ -1329,6 +1330,7 @@ async function emitirVendasML(params: { import_id: string; user_email?: string; 
             pedidos_processados: stats.pedidos_processados,
             pedidos_cancelados: stats.pedidos_cancelados_ignorados,
             vendas_revertidas: stats.vendas_revertidas,
+            devolucoes_criadas: stats.devolucoes_criadas,
             total_vendas_ml: parseInt(salesCount.rows[0].count)
         }
     };

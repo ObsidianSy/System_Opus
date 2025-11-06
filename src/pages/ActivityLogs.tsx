@@ -84,8 +84,10 @@ const fetchUsers = async (): Promise<User[]> => {
 const actionLabels: Record<string, string> = {
     upload_full: "Upload FULL",
     upload_ml: "Upload ML",
-    emit_sales: "Emitir Vendas",
+    emit_sales: "Emitir Vendas (FULL)",
+    emit_sales_ml: "Emitir Vendas (ML)",
     relate_item: "Relacionar Item",
+    relate_manual: "Relacionamento Manual",
     auto_relate: "Relacionamento Automático",
 }
 
@@ -93,7 +95,9 @@ const actionColors: Record<string, string> = {
     upload_full: "bg-blue-500",
     upload_ml: "bg-green-500",
     emit_sales: "bg-purple-500",
+    emit_sales_ml: "bg-purple-600",
     relate_item: "bg-orange-500",
+    relate_manual: "bg-orange-600",
     auto_relate: "bg-cyan-500",
 }
 
@@ -101,12 +105,36 @@ const actionColors: Record<string, string> = {
 const formatDetails = (details: Record<string, any>) => {
     const items: { label: string; value: string | number }[] = []
 
-    if (details.envio_num) items.push({ label: "Nº Envio", value: details.envio_num })
+    // Informações gerais
+    if (details.cliente) items.push({ label: "Cliente", value: details.cliente })
     if (details.client_name) items.push({ label: "Cliente", value: details.client_name })
+    if (details.envio_num) items.push({ label: "Nº Envio", value: details.envio_num })
     if (details.filename) items.push({ label: "Arquivo", value: details.filename })
+
+    // Upload/Import
     if (details.total_linhas) items.push({ label: "Total de Linhas", value: details.total_linhas })
+    if (details.inseridas !== undefined) items.push({ label: "Linhas Inseridas", value: details.inseridas })
     if (details.auto_relacionadas !== undefined) items.push({ label: "Auto Relacionadas", value: details.auto_relacionadas })
     if (details.pendentes !== undefined) items.push({ label: "Pendentes", value: details.pendentes })
+
+    // Emissão de vendas
+    if (details.import_id) items.push({ label: "Import ID", value: details.import_id })
+    if (details.source) items.push({ label: "Origem", value: details.source })
+    if (details.candidatos !== undefined) items.push({ label: "Candidatos", value: details.candidatos })
+    if (details.inseridos !== undefined) items.push({ label: "Inseridos", value: details.inseridos })
+    if (details.ja_existiam !== undefined) items.push({ label: "Já Existiam", value: details.ja_existiam })
+    if (details.full_skipped !== undefined) items.push({ label: "FULL Ignorados", value: details.full_skipped })
+    if (details.cancelados_skipped !== undefined) items.push({ label: "Cancelados Ignorados", value: details.cancelados_skipped })
+    if (details.cancelados_removidos !== undefined) items.push({ label: "Cancelados Removidos", value: details.cancelados_removidos })
+    if (details.erros !== undefined) items.push({ label: "Erros", value: details.erros })
+
+    // Relacionamento
+    if (details.sku_original) items.push({ label: "SKU Original", value: details.sku_original })
+    if (details.stock_sku) items.push({ label: "SKU Estoque", value: details.stock_sku })
+    if (details.codigo_ml) items.push({ label: "Código ML", value: details.codigo_ml })
+    if (details.learn !== undefined) items.push({ label: "Aprendizado", value: details.learn ? "Sim" : "Não" })
+
+    // Outras informações
     if (details.total_vendas) items.push({ label: "Total de Vendas", value: details.total_vendas })
     if (details.import_date) items.push({ label: "Data Importação", value: new Date(details.import_date).toLocaleDateString('pt-BR') })
     if (details.relacionadas) items.push({ label: "Relacionadas", value: details.relacionadas })

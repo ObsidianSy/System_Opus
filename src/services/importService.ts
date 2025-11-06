@@ -539,6 +539,8 @@ export const importService = {
       }
     }
 
+    console.log('📤 importService.emitirVendas - Enviando:', params);
+
     const response = await fetch(EMITIR_VENDAS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

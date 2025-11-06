@@ -14,6 +14,8 @@ import { enviosRouter } from './routes/envios';
 import { activityRouter } from './routes/activity';
 import { devolucoesRouter } from './routes/devolucoes';
 import authRouter from './routes/auth';
+import produtoFotosRouter from './routes/produto-fotos';
+import usuariosRouter from './routes/usuarios';
 import { startCleanupTask } from './tasks/cleanupActivityLogs';
 
 // Carrega variáveis de ambiente
@@ -51,10 +53,11 @@ app.use(cors({
 
 // Middlewares
 app.use(helmet({
-    contentSecurityPolicy: false, // Desabilita CSP para permitir scripts externos
+    contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: false, // Permite carregar recursos de outras origens
 }));
-app.use(compression()); // Compressão de respostas
+app.use(compression());
 app.use(express.json({ limit: '10mb' })); // Parser JSON
 app.use(express.urlencoded({ extended: true }));
 
@@ -75,6 +78,7 @@ app.get('/health', (req: Request, res: Response) => {
 
 // Rotas da API
 app.use('/api/auth', authRouter);
+app.use('/api/usuarios', usuariosRouter);
 app.use('/api/clientes', clientesRouter);
 app.use('/api/vendas', vendasRouter);
 app.use('/api/pagamentos', pagamentosRouter);
@@ -84,6 +88,28 @@ app.use('/api/receita-produto', receitaProdutoRouter);
 app.use('/api/envios', enviosRouter);
 app.use('/api/activity', activityRouter);
 app.use('/api/devolucoes', devolucoesRouter);
+app.use('/api/produto-fotos', produtoFotosRouter);
+
+// Serve arquivos estáticos de upload com CORS
+const uploadsPath = path.join(__dirname, '..', 'uploads');
+app.use('/uploads', cors(), express.static(uploadsPath, {
+    maxAge: '1d',
+    etag: true,
+    setHeaders: (res, filePath) => {
+        // Adiciona headers CORS específicos para imagens
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+
+        // Define tipo MIME correto
+        if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
+            res.setHeader('Content-Type', 'image/jpeg');
+        } else if (filePath.endsWith('.png')) {
+            res.setHeader('Content-Type', 'image/png');
+        } else if (filePath.endsWith('.webp')) {
+            res.setHeader('Content-Type', 'image/webp');
+        }
+    }
+}));
 
 // Serve arquivos estáticos do frontend (se existir pasta public)
 const publicPath = path.join(__dirname, '..', 'public');

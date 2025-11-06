@@ -321,6 +321,8 @@ const mapApiDataToFrontend = (data: any[], sheetName: string): any[] => {
         'Quantidade Atual': parseFloat(item.quantidade_atual) || 0,  // ✅ Converter para número
         'Unidade de Medida': item.unidade_medida,
         'Preço Unitário': parseFloat(item.preco_unitario) || 0,  // ✅ Converter para número
+        // Mantém a URL da foto vinda do backend para ser usada na UI
+        'foto_url': item.foto_url,
         'Componentes': item.componentes?.map((c: any) => ({
           'SKU Componente': c.sku_componente,
           'Quantidade por Kit': c.quantidade_por_kit,
@@ -350,7 +352,9 @@ const mapApiDataToFrontend = (data: any[], sheetName: string): any[] => {
         'Preço Unitário': parseFloat(item.preco_unitario) || 0,
         'Valor Total': parseFloat(item.valor_total) || 0,
         'Canal': item.canal,
-        'Pedido UID': item.pedido_uid
+        'Pedido UID': item.pedido_uid,
+        // Mantém a URL da foto vinda do backend para ser usada na UI
+        'foto_url': item.foto_url
       }));
 
     case 'Pagamentos':

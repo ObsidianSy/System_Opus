@@ -3,40 +3,56 @@ import { pool } from '../database/db';
 
 export const devolucoesRouter = Router();
 
-// GET - Listar vendas canceladas pendentes de devolução física
+// GET - Listar devoluções pendentes de conferência
 devolucoesRouter.get('/pendentes', async (req: Request, res: Response) => {
     try {
-        // Buscar vendas com status_venda = 'cancelado' que ainda não têm registro de devolução
-        // ou têm devolução mas ainda não foram conferidas
-        const query = `
+        const { search } = req.query;
+
+        let query = `
             SELECT 
-                v.venda_id,
-                v.data_venda,
-                v.pedido_uid,
-                v.nome_cliente,
-                v.sku_produto,
-                v.nome_produto,
-                v.quantidade_vendida,
-                v.canal,
-                v.valor_total,
-                v.fulfillment_ext,
                 d.id as devolucao_id,
+                d.pedido_uid,
+                d.sku_produto,
                 d.quantidade_esperada,
                 d.quantidade_recebida,
-                d.condicao,
+                d.tipo_problema,
+                d.motivo_cancelamento,
+                d.produto_real_recebido,
                 d.conferido_em,
                 d.conferido_por,
-                d.observacoes
-            FROM obsidian.vendas v
-            LEFT JOIN obsidian.devolucoes d ON v.venda_id = d.venda_id
-            WHERE 
-                LOWER(v.status_venda) = 'cancelado'
-                AND v.fulfillment_ext = false  -- Excluir vendas de fulfillment
-                AND (d.id IS NULL OR d.conferido_em IS NULL)  -- Sem devolução ou não conferida
-            ORDER BY v.data_venda DESC, v.venda_id DESC
+                d.observacoes,
+                d.codigo_rastreio,
+                d.created_at,
+                pf.foto_url,
+                v.venda_id as venda_id,
+                v.data_venda,
+                v.nome_cliente,
+                v.nome_produto,
+                v.quantidade_vendida as quantidade_vendida,
+                v.canal,
+                v.valor_total
+            FROM public.devolucoes d
+            LEFT JOIN obsidian.produto_fotos pf ON obsidian.extrair_produto_base(d.sku_produto) = pf.produto_base
+            LEFT JOIN obsidian.vendas v ON v.pedido_uid = d.pedido_uid AND v.sku_produto = d.sku_produto
+            WHERE d.conferido_em IS NULL  -- Ainda não conferida
         `;
 
-        const result = await pool.query(query);
+        const params: any[] = [];
+
+        // Adicionar filtro de busca se fornecido
+        if (search && search.toString().trim() !== '') {
+            const searchTerm = `%${search.toString().trim().toUpperCase()}%`;
+            query += ` AND (
+                UPPER(d.pedido_uid) LIKE $1 
+                OR UPPER(d.codigo_rastreio) LIKE $1
+                OR UPPER(d.sku_produto) LIKE $1
+            )`;
+            params.push(searchTerm);
+        }
+
+        query += ` ORDER BY d.created_at DESC`;
+
+        const result = await pool.query(query, params);
 
         res.json({
             total: result.rows.length,
@@ -56,22 +72,18 @@ devolucoesRouter.get('/historico', async (req: Request, res: Response) => {
         const query = `
             SELECT 
                 d.id,
-                d.venda_id,
+                d.pedido_uid,
                 d.sku_produto,
                 d.quantidade_esperada,
                 d.quantidade_recebida,
-                d.condicao,
+                d.tipo_problema,
+                d.motivo_cancelamento,
+                d.produto_real_recebido,
                 d.conferido_em,
                 d.conferido_por,
                 d.observacoes,
-                v.data_venda,
-                v.pedido_uid,
-                v.nome_cliente,
-                v.nome_produto,
-                v.canal,
-                v.valor_total
-            FROM obsidian.devolucoes d
-            INNER JOIN obsidian.vendas v ON d.venda_id = v.venda_id
+                d.created_at
+            FROM public.devolucoes d
             WHERE d.conferido_em IS NOT NULL
             ORDER BY d.conferido_em DESC
             LIMIT $1 OFFSET $2
@@ -95,25 +107,33 @@ devolucoesRouter.post('/conferir', async (req: Request, res: Response) => {
 
     try {
         const {
-            venda_id,
+            pedido_uid,
             sku_produto,
             quantidade_esperada,
             quantidade_recebida,
-            condicao,
+            tipo_problema,
+            produto_real_recebido,
             conferido_por,
             observacoes
         } = req.body;
 
         // Validações
-        if (!venda_id || !sku_produto || quantidade_esperada === undefined || quantidade_recebida === undefined) {
+        if (!pedido_uid || !sku_produto || quantidade_esperada === undefined || quantidade_recebida === undefined) {
             return res.status(400).json({
-                error: 'Campos obrigatórios: venda_id, sku_produto, quantidade_esperada, quantidade_recebida'
+                error: 'Campos obrigatórios: pedido_uid, sku_produto, quantidade_esperada, quantidade_recebida'
             });
         }
 
-        if (!['bom', 'defeito'].includes(condicao)) {
+        if (!['correto_bom', 'correto_defeito', 'errado_bom', 'conferido'].includes(tipo_problema)) {
             return res.status(400).json({
-                error: 'Condição deve ser "bom" ou "defeito"'
+                error: 'tipo_problema deve ser: correto_bom, correto_defeito, errado_bom ou conferido'
+            });
+        }
+
+        // Se produto errado, precisa informar qual produto realmente veio
+        if (tipo_problema === 'errado_bom' && !produto_real_recebido) {
+            return res.status(400).json({
+                error: 'Para tipo_problema=errado_bom, é obrigatório informar produto_real_recebido'
             });
         }
 
@@ -125,74 +145,63 @@ devolucoesRouter.post('/conferir', async (req: Request, res: Response) => {
 
         await client.query('BEGIN');
 
-        // Verificar se já existe registro de devolução para esta venda
-        const checkExisting = await client.query(
-            'SELECT id FROM obsidian.devolucoes WHERE venda_id = $1 AND sku_produto = $2',
-            [venda_id, sku_produto]
+        // Atualizar registro existente de devolução
+        const updateResult = await client.query(
+            `UPDATE public.devolucoes 
+            SET quantidade_recebida = $1,
+                tipo_problema = $2,
+                produto_real_recebido = $3,
+                conferido_em = CURRENT_TIMESTAMP,
+                conferido_por = $4,
+                observacoes = $5
+            WHERE pedido_uid = $6 AND sku_produto = $7
+            RETURNING id`,
+            [quantidade_recebida, tipo_problema, produto_real_recebido, conferido_por, observacoes, pedido_uid, sku_produto]
         );
 
-        let devolverId: number;
-
-        if (checkExisting.rows.length > 0) {
-            // Atualizar registro existente
-            const updateResult = await client.query(
-                `UPDATE obsidian.devolucoes 
-                SET quantidade_esperada = $1,
-                    quantidade_recebida = $2,
-                    condicao = $3,
-                    conferido_em = CURRENT_TIMESTAMP,
-                    conferido_por = $4,
-                    observacoes = $5
-                WHERE venda_id = $6 AND sku_produto = $7
-                RETURNING id`,
-                [quantidade_esperada, quantidade_recebida, condicao, conferido_por, observacoes, venda_id, sku_produto]
-            );
-            devolverId = updateResult.rows[0].id;
-        } else {
-            // Criar novo registro
-            const insertResult = await client.query(
-                `INSERT INTO obsidian.devolucoes 
-                (venda_id, sku_produto, quantidade_esperada, quantidade_recebida, condicao, conferido_em, conferido_por, observacoes)
-                VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, $6, $7)
-                RETURNING id`,
-                [venda_id, sku_produto, quantidade_esperada, quantidade_recebida, condicao, conferido_por, observacoes]
-            );
-            devolverId = insertResult.rows[0].id;
+        if (updateResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Devolução não encontrada para este pedido e SKU' });
         }
 
-        // Se condição for "bom", adicionar ao estoque
-        if (condicao === 'bom' && quantidade_recebida > 0) {
+        const devolverId = updateResult.rows[0].id;
+
+        // ✅ NOVA LÓGICA: Determinar qual SKU volta pro estoque
+        let sku_para_estoque: string | null = null;
+
+        if (tipo_problema === 'correto_bom' && quantidade_recebida > 0) {
+            // Produto correto em bom estado → volta o SKU esperado
+            sku_para_estoque = sku_produto;
+        } else if (tipo_problema === 'errado_bom' && quantidade_recebida > 0 && produto_real_recebido) {
+            // Produto errado mas em bom estado → volta o SKU que realmente veio
+            sku_para_estoque = produto_real_recebido;
+        } else if (tipo_problema === 'conferido' && quantidade_recebida > 0) {
+            // Conferido genérico → volta o SKU esperado
+            sku_para_estoque = sku_produto;
+        }
+        // tipo_problema === 'correto_defeito' → não volta nada pro estoque
+
+        if (sku_para_estoque) {
+            // Registrar movimento de estoque
             await client.query(
                 `INSERT INTO obsidian.estoque_movimentos 
-                (sku_produto, quantidade, tipo_movimento, observacao, usuario)
-                VALUES ($1, $2, 'entrada', $3, $4)`,
+                (sku, tipo, quantidade, origem_tabela, origem_id, observacao)
+                VALUES ($1, 'devolucao', $2, 'devolucoes', $3, $4)`,
                 [
-                    sku_produto,
+                    sku_para_estoque,
                     quantidade_recebida,
-                    `Devolução de venda cancelada (ID: ${venda_id})`,
-                    conferido_por || 'sistema'
+                    devolverId.toString(),
+                    `Devolução conferida - ${tipo_problema} - Pedido ${pedido_uid}`
                 ]
             );
-        }
 
-        // Registrar reversão financeira (crédito ao cliente)
-        const vendaData = await client.query(
-            'SELECT valor_total, nome_cliente, client_id FROM obsidian.vendas WHERE venda_id = $1',
-            [venda_id]
-        );
-
-        if (vendaData.rows.length > 0) {
-            const valorProporcional = (vendaData.rows[0].valor_total / quantidade_esperada) * quantidade_recebida;
-
+            // Atualizar quantidade no produtos
             await client.query(
-                `INSERT INTO obsidian.pagamentos 
-                (client_id, tipo, valor, status, observacao, data_pagamento, metodo)
-                VALUES ($1, 'credito', $2, 'confirmado', $3, CURRENT_DATE, 'devolucao')`,
-                [
-                    vendaData.rows[0].client_id,
-                    valorProporcional,
-                    `Crédito por devolução - Pedido ${venda_id} - ${sku_produto}`,
-                ]
+                `UPDATE obsidian.produtos 
+                SET quantidade_atual = COALESCE(quantidade_atual, 0) + $1,
+                    atualizado_em = NOW()
+                WHERE UPPER(sku) = UPPER($2)`,
+                [quantidade_recebida, sku_para_estoque]
             );
         }
 
@@ -202,8 +211,9 @@ devolucoesRouter.post('/conferir', async (req: Request, res: Response) => {
             success: true,
             message: 'Devolução conferida com sucesso',
             devolucao_id: devolverId,
-            estoque_atualizado: condicao === 'bom',
-            quantidade_retornada_estoque: condicao === 'bom' ? quantidade_recebida : 0
+            tipo_problema,
+            sku_retornado_estoque: sku_para_estoque,
+            quantidade_retornada_estoque: sku_para_estoque ? quantidade_recebida : 0
         });
 
     } catch (error) {
@@ -222,16 +232,8 @@ devolucoesRouter.get('/:id', async (req: Request, res: Response) => {
 
         const query = `
             SELECT 
-                d.*,
-                v.data_venda,
-                v.pedido_uid,
-                v.nome_cliente,
-                v.nome_produto,
-                v.canal,
-                v.valor_total,
-                v.quantidade_vendida
-            FROM obsidian.devolucoes d
-            INNER JOIN obsidian.vendas v ON d.venda_id = v.venda_id
+                d.*
+            FROM public.devolucoes d
             WHERE d.id = $1
         `;
 
@@ -255,7 +257,7 @@ devolucoesRouter.delete('/:id', async (req: Request, res: Response) => {
 
         // Verificar se já foi conferida
         const check = await pool.query(
-            'SELECT conferido_em FROM obsidian.devolucoes WHERE id = $1',
+            'SELECT conferido_em FROM public.devolucoes WHERE id = $1',
             [id]
         );
 
@@ -269,7 +271,7 @@ devolucoesRouter.delete('/:id', async (req: Request, res: Response) => {
             });
         }
 
-        await pool.query('DELETE FROM obsidian.devolucoes WHERE id = $1', [id]);
+        await pool.query('DELETE FROM public.devolucoes WHERE id = $1', [id]);
 
         res.json({ success: true, message: 'Devolução cancelada' });
     } catch (error) {

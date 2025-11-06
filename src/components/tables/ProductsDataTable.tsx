@@ -2,15 +2,16 @@ import { useState, useMemo, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Pagination, 
-  PaginationContent, 
-  PaginationItem, 
-  PaginationLink, 
-  PaginationNext, 
-  PaginationPrevious 
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious
 } from "@/components/ui/pagination";
 import { useDebounce } from "@/hooks/useDebounce";
+import { API_BASE_URL } from "@/config/api";
 import {
   Table,
   TableBody,
@@ -50,6 +51,7 @@ interface ProdutoAcabado {
   quantidade?: number;
   unidade_medida?: string;
   preco_unitario?: number;
+  foto_url?: string;
   SKU?: string;
   "Nome Produto"?: string;
   "Categoria"?: string;
@@ -93,7 +95,7 @@ const ProductsDataTableComponent = ({
         categoria.toLowerCase().includes(search)
       );
     });
-    
+
     // Ordenar por SKU usando natural sort
     return sortBySKU(filtered, (p) => p.sku || p.SKU || "");
   }, [produtos, debouncedSearch]);
@@ -110,7 +112,7 @@ const ProductsDataTableComponent = ({
     try {
       const sku = produto.sku || produto.SKU || "";
       const success = await excluirProduto(sku);
-      
+
       if (success) {
         toast.success("Produto excluído com sucesso!");
         onRefresh();
@@ -160,6 +162,7 @@ const ProductsDataTableComponent = ({
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-16">Foto</TableHead>
                 <TableHead>SKU</TableHead>
                 <TableHead>Nome Produto</TableHead>
                 <TableHead>Categoria</TableHead>
@@ -174,7 +177,7 @@ const ProductsDataTableComponent = ({
             <TableBody>
               {filteredProducts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-32 text-center">
+                  <TableCell colSpan={10} className="h-32 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <Package className="h-8 w-8 text-muted-foreground" />
                       <p className="text-muted-foreground">
@@ -195,79 +198,96 @@ const ProductsDataTableComponent = ({
                   const unidade = produto.unidade_medida || produto["Unidade de Medida"] || "";
                   const preco = Number(produto.preco_unitario || produto["Preço Unitário"]) || 0;
                   const valorTotal = calculateTotalValue(quantidade, preco);
+                  const foto_url = produto.foto_url;
 
                   return (
-                  <TableRow key={sku || index} className="cursor-pointer hover:bg-muted/50" onClick={() => onViewDetails?.(produto)}>
-                    <TableCell className="font-mono text-sm">{sku}</TableCell>
-                    <TableCell className="font-medium">{nome}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {categoria}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">{tipo}</span>
-                        {tipo === "KIT" && (
-                          <Badge variant="secondary" className="text-xs">
-                            <Package className="w-3 h-3 mr-1" />
-                            KIT
+                    <TableRow key={sku || index} className="cursor-pointer hover:bg-muted/50" onClick={() => onViewDetails?.(produto)}>
+                      {/* Coluna de Foto */}
+                      <TableCell>
+                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-muted">
+                          {foto_url ? (
+                            <img
+                              src={`${API_BASE_URL}${foto_url}`}
+                              alt={sku}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary font-bold">
+                              {sku.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{sku}</TableCell>
+                      <TableCell className="font-medium">{nome}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {categoria}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">{tipo}</span>
+                          {tipo === "KIT" && (
+                            <Badge variant="secondary" className="text-xs">
+                              <Package className="w-3 h-3 mr-1" />
+                              KIT
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {tipo === "KIT" ? (
+                          <Badge variant="outline" className="text-xs font-medium">
+                            Calculado
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant={getQuantityBadgeVariant(quantidade)}
+                            className="text-xs font-medium"
+                          >
+                            {quantidade}
                           </Badge>
                         )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {tipo === "KIT" ? (
-                        <Badge variant="outline" className="text-xs font-medium">
-                          Calculado
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant={getQuantityBadgeVariant(quantidade)}
-                          className="text-xs font-medium"
-                        >
-                          {quantidade}
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {unidade}
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatCurrencyAbbreviated(preco)}
-                    </TableCell>
-                    <TableCell className="text-right font-semibold text-primary">
-                      {formatCurrencyAbbreviated(valorTotal)}
-                    </TableCell>
-                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {onViewDetails && (
-                            <DropdownMenuItem onClick={() => onViewDetails(produto)}>
-                              <Package className="mr-2 h-4 w-4" />
-                              Ver Detalhes
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {unidade}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrencyAbbreviated(preco)}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-primary">
+                        {formatCurrencyAbbreviated(valorTotal)}
+                      </TableCell>
+                      <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {onViewDetails && (
+                              <DropdownMenuItem onClick={() => onViewDetails(produto)}>
+                                <Package className="mr-2 h-4 w-4" />
+                                Ver Detalhes
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem onClick={() => onEdit(produto)}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Editar
                             </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem onClick={() => onEdit(produto)}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Editar
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => setDeleteProduct(produto)}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Excluir
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
+                            <DropdownMenuItem
+                              onClick={() => setDeleteProduct(produto)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
                   );
                 })
               )}
@@ -280,7 +300,7 @@ const ProductsDataTableComponent = ({
             <Pagination>
               <PaginationContent>
                 <PaginationItem>
-                  <PaginationPrevious 
+                  <PaginationPrevious
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
                   />
@@ -309,7 +329,7 @@ const ProductsDataTableComponent = ({
                   );
                 })}
                 <PaginationItem>
-                  <PaginationNext 
+                  <PaginationNext
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
                   />

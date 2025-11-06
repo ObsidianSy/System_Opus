@@ -51,6 +51,8 @@ export interface SkuSearchResult {
   is_kit: boolean;
   source: 'exact' | 'alias' | 'prefix' | 'fuzzy';
   score: number;
+  // URL relativa da foto do produto (quando disponível)
+  foto_url?: string;
 }
 
 export const useFullImportData = () => {

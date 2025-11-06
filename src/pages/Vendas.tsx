@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import VendaForm from "@/components/forms/VendaForm";
 import { formatCurrency, formatQuantity, formatNumber, toNumber } from "@/utils/formatters";
+import { API_BASE_URL } from "@/config/api";
 
 
 const parseDateLocal = (s?: string) => {
@@ -34,6 +35,7 @@ interface Venda {
   "Valor Total": number;
   "Canal": string;
   "Pedido UID": string;
+  foto_url?: string;
 }
 
 const Vendas = () => {
@@ -58,10 +60,12 @@ const Vendas = () => {
       const searchTerm = filters.searchTerm.toLowerCase();
       const cliente = venda['Nome Cliente']?.toLowerCase() || '';
       const sku = venda['SKU Produto']?.toLowerCase() || '';
+      const pedidoUid = venda['Pedido UID']?.toLowerCase() || '';
 
       const matchesSearch = !searchTerm ||
         cliente.includes(searchTerm) ||
-        sku.includes(searchTerm);
+        sku.includes(searchTerm) ||
+        pedidoUid.includes(searchTerm);
 
       const matchesClient = !filters.selectedClient ||
         venda['Nome Cliente'] === filters.selectedClient;
@@ -263,6 +267,7 @@ const Vendas = () => {
               valorTotal: venda['Valor Total'],
               canal: venda['Canal'],
               pedidoUid: venda['Pedido UID'],
+              imageUrl: venda.foto_url ? `${API_BASE_URL}${venda.foto_url}` : undefined,
             }))}
             showThumbnails={true}
             showQuantity={true}

@@ -190,3 +190,6 @@ Sempre que voce for fazer alguma coisa no codigo ou criar algo, voce nunca deve 
 
 
 Nova regra, sempre olha o arquivo tabela-sql.md. La vc vai ter uma noçao de todo slq do banco.
+
+
+Se possivel nao ficar criando scripts, voce ja pode rodar direto eles, ta enchendo o projeto de arquivo atoa, anao ser q seja algo q va ficar la pra ser rodado direto!

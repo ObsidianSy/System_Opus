@@ -186,6 +186,7 @@ export const PendenciasTab = () => {
             onOpenChange={setKitModalOpen}
             rawId={selectedItem.full_raw_id}
             skuOriginal={selectedItem.sku_texto}
+            envioId={selectedItem.envio_id} // ✅ Passar envio_id
             onKitRelated={(sku) => {
               console.log('Kit relacionado:', sku);
               setKitModalOpen(false);

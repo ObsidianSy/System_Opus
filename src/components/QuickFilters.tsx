@@ -79,7 +79,7 @@ export const QuickFilters: React.FC<QuickFiltersProps> = ({
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
           <Input
             data-search-input
-            placeholder="Buscar... (Ctrl+F)"
+            placeholder="Buscar por cliente, SKU ou pedido... (Ctrl+F)"
             value={filters.searchTerm}
             onChange={(e) => updateFilter('searchTerm', e.target.value)}
             className="pl-10 glass-card border-primary/20 focus:border-primary/40"

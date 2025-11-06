@@ -85,21 +85,43 @@ export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: Im
 
       // Se temos import_id, conectar ao SSE para progresso real
       if (response.import_id) {
-        const eventSource = new EventSource(`/api/envios/upload-progress/${response.import_id}`);
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const eventSource = new EventSource(`${apiUrl}/api/envios/upload-progress/${response.import_id}`);
 
         eventSource.onmessage = (event) => {
           try {
             const progress = JSON.parse(event.data);
-            const percentage = progress.total > 0
-              ? Math.round((progress.current / progress.total) * 100)
-              : 0;
+
+            // Backend agora envia current como porcentagem (0-100)
+            const percentage = progress.current;
 
             setUploadProgress(percentage);
 
-            // Fechar conexão quando completar
-            if (progress.stage === 'completed' || progress.stage === 'error') {
+            console.log(`📊 FULL Progresso: ${percentage}% - ${progress.stage} - ${progress.message}`);
+
+            // ✅ Fechar conexão quando completar ou houver erro
+            if (progress.stage === 'completed') {
               eventSource.close();
               setUploadProgress(100);
+
+              toast({
+                title: '✅ Processamento concluído!',
+                description: progress.message || 'Arquivo processado com sucesso',
+                duration: 5000
+              });
+            }
+
+            if (progress.stage === 'error') {
+              eventSource.close();
+              setUploadProgress(0);
+              setIsUploading(false);
+
+              toast({
+                title: 'Erro no processamento',
+                description: progress.message || 'Falha ao processar arquivo',
+                variant: 'destructive',
+                duration: 5000
+              });
             }
           } catch (err) {
             console.error('Erro ao processar progresso:', err);
@@ -111,10 +133,10 @@ export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: Im
           setUploadProgress(100);
         };
 
-        // Timeout de segurança (2 minutos)
+        // Timeout de segurança (3 minutos)
         setTimeout(() => {
           eventSource.close();
-        }, 120000);
+        }, 180000);
       } else {
         // Fallback: progresso fake se não tiver import_id
         setUploadProgress(100);
@@ -343,11 +365,19 @@ export const ImportTabFull = memo(function ImportTabFull({ onUploadSuccess }: Im
             </div>
 
             {isUploading && (
-              <div className="space-y-2">
-                <Progress value={uploadProgress} className="h-2" />
-                <p className="text-xs text-muted-foreground text-center">
-                  Enviando... {uploadProgress}%
-                </p>
+              <div className="space-y-3 p-4 border rounded-lg bg-muted/50">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">
+                    {uploadProgress === 100 ? '✅ Concluído' : '⏳ Processando...'}
+                  </span>
+                  <span className="font-bold text-primary">
+                    {uploadProgress}%
+                  </span>
+                </div>
+                <Progress
+                  value={uploadProgress}
+                  className={`h-3 transition-all ${uploadProgress === 100 ? 'bg-green-100' : ''}`}
+                />
               </div>
             )}
 

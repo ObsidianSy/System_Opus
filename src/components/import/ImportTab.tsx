@@ -88,29 +88,50 @@ export const ImportTab = memo(function ImportTab() {
       eventSource.onmessage = (event) => {
         const progress: UploadProgress = JSON.parse(event.data);
 
-        // Calcular porcentagem
-        const percentage = progress.total > 0
-          ? Math.round((progress.current / progress.total) * 100)
-          : 0;
+        // Backend agora envia current como porcentagem (0-100)
+        // Não precisa calcular, já vem pronto!
+        const percentage = progress.current;
 
         setUploadProgress(percentage);
         setProgressMessage(progress.message);
 
+        console.log(`📊 Progresso recebido: ${percentage}% - ${progress.stage} - ${progress.message}`);
+
         // Se completou, fechar conexão
         if (progress.stage === 'completed') {
           eventSource.close();
+
+          // ✅ Feedback visual de conclusão
+          setUploadProgress(100);
+          setProgressMessage('✅ Upload concluído com sucesso!');
+
           toast({
-            title: 'Upload concluído!',
-            description: progress.message
+            title: '✅ Upload concluído!',
+            description: progress.message,
+            duration: 5000
           });
 
-          // Reset form após 2 segundos
+          // Reset form após 3 segundos
           setTimeout(() => {
             setSelectedFile(null);
             setUploadProgress(0);
             setProgressMessage('');
             setIsUploading(false);
-          }, 2000);
+          }, 3000);
+        }
+
+        // ✅ Tratar erros
+        if (progress.stage === 'error') {
+          eventSource.close();
+          setIsUploading(false);
+          setUploadProgress(0);
+
+          toast({
+            title: 'Erro no upload',
+            description: progress.message || 'Falha ao processar arquivo',
+            variant: 'destructive',
+            duration: 5000
+          });
         }
       };
 
@@ -154,6 +175,9 @@ export const ImportTab = memo(function ImportTab() {
       });
       return;
     }
+
+    console.log('🔍 ImportTab - importId:', importId);
+
     setIsEmitting(true);
     try {
       const result = await importService.emitirVendas({
@@ -250,18 +274,24 @@ export const ImportTab = memo(function ImportTab() {
         </div>
 
         {/* Progress */}
-        {isUploading && <div className="space-y-2">
-          <Progress value={uploadProgress} className="h-2" />
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground text-center">
+        {isUploading && <div className="space-y-3 p-4 border rounded-lg bg-muted/50">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium">
+              {uploadProgress === 100 ? '✅ Concluído' : '⏳ Processando...'}
+            </span>
+            <span className="font-bold text-primary">
               {uploadProgress}%
-            </p>
-            {progressMessage && (
-              <p className="text-sm text-muted-foreground text-center">
-                {progressMessage}
-              </p>
-            )}
+            </span>
           </div>
+          <Progress
+            value={uploadProgress}
+            className={`h-3 transition-all ${uploadProgress === 100 ? 'bg-green-100' : ''}`}
+          />
+          {progressMessage && (
+            <p className="text-sm text-muted-foreground">
+              {progressMessage}
+            </p>
+          )}
         </div>}
 
         {/* Botão de Envio */}

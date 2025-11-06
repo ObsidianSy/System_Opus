@@ -20,6 +20,20 @@ dist-ssr
 # Scripts de debug e teste
 scripts-debug/
 uploads/
+*.test.js
+*.test.ts
+test-*.js
+run-*.js
+fix-*.js
+fix-*.sql
+check-*.js
+update-*.js
+seed.sql
+
+# Arquivos de análise temporária
+ANALISE_*.md
+FUNCIONAMENTO_*.md
+resultado-*.txt
 
 # Editor directories and files
 .vscode/*

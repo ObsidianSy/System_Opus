@@ -104,28 +104,46 @@ enviosRouter.get('/upload-progress/:importId', (req: Request, res: Response) => 
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.flushHeaders(); // Forçar envio dos headers
 
-    // Enviar progresso inicial
+    console.log(`📡 Cliente conectou ao SSE para importId: ${importId}`);
+
+    // Enviar progresso inicial imediatamente
     const sendProgress = () => {
         const progress = uploadProgress.get(importId);
         if (progress) {
-            res.write(`data: ${JSON.stringify(progress)}\n\n`);
+            const data = JSON.stringify(progress);
+            res.write(`data: ${data}\n\n`);
+            console.log(`📊 Enviando progresso: ${progress.stage} - ${progress.current}/${progress.total} (${progress.message})`);
 
             // Se completou, fechar conexão após 2 segundos
             if (progress.stage === 'completed' || progress.stage === 'error') {
                 setTimeout(() => {
+                    console.log(`✅ Upload ${importId} finalizado, limpando memória`);
                     uploadProgress.delete(importId);
                     res.end();
                 }, 2000);
             }
+        } else {
+            // Se não tem progresso ainda, enviar placeholder
+            res.write(`data: ${JSON.stringify({
+                stage: 'waiting',
+                current: 0,
+                total: 100,
+                message: 'Aguardando processamento...'
+            })}\n\n`);
         }
     };
 
-    // Enviar atualizações a cada 500ms
-    const interval = setInterval(sendProgress, 500);
+    // Enviar imediatamente
+    sendProgress();
+
+    // Enviar atualizações a cada 300ms (mais rápido)
+    const interval = setInterval(sendProgress, 300);
 
     // Cleanup quando cliente desconectar
     req.on('close', () => {
+        console.log(`🔌 Cliente desconectou do SSE: ${importId}`);
         clearInterval(interval);
         res.end();
     });
@@ -539,23 +557,21 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             // 1. CRIAR LOTE (import_batches) - ID único do upload
             const batchResult = await pool.query(
                 `INSERT INTO obsidian.import_batches 
-                 (filename, source, client_id, status, total_rows, started_at, import_date) 
-                 VALUES ($1, $2, $3, $4, $5, NOW(), $6) 
-                 RETURNING *`,
+                     (filename, source, client_id, status, total_rows, started_at, import_date) 
+                     VALUES ($1, $2, $3, $4, $5, NOW(), $6) 
+                     RETURNING *`,
                 [filename, source, clientIdNum, 'processing', jsonData.length, import_date || null]
             );
 
             const importId = batchResult.rows[0].import_id;
 
-            // Inicializar progresso
+            // ✅ Inicializar progresso - 10%
             uploadProgress.set(importId, {
                 stage: 'processing',
-                current: 0,
-                total: jsonData.length,
-                message: 'Iniciando processamento...'
-            });
-
-            // Calcular totais
+                current: 10,
+                total: 100,
+                message: `Processando ${jsonData.length} linhas...`
+            });            // Calcular totais
             const totalQtd = jsonData.reduce((sum: number, row: any) => {
                 const qtd = parseFloat(
                     row['Unidades aptas para venda'] ||
@@ -596,12 +612,12 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 [envioId]
             );
 
-            // Atualizar progresso - criação do envio
+            // ✅ Atualizar progresso - 30%
             uploadProgress.set(importId, {
                 stage: 'inserting',
-                current: 0,
-                total: jsonData.length,
-                message: 'Inserindo linhas brutas...'
+                current: 30,
+                total: 100,
+                message: `Inserindo ${jsonData.length} linhas...`
             });
 
             // 3. INSERIR LINHAS BRUTAS (logistica.full_envio_raw)
@@ -658,12 +674,12 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             let autoMatched = 0;
 
             if (insertedRows > 0) {
-                // Atualizar progresso - início do relacionamento
+                // ✅ Atualizar progresso - 60%
                 uploadProgress.set(importId, {
                     stage: 'matching',
-                    current: 0,
-                    total: insertedRows,
-                    message: 'Auto-relacionando SKUs...'
+                    current: 60,
+                    total: 100,
+                    message: `Auto-relacionando ${insertedRows} SKUs...`
                 });
 
                 // Buscar todas as linhas recém-inseridas
@@ -811,12 +827,13 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
                         autoMatched++;
 
-                        // Atualizar progresso a cada 5 itens
-                        if (autoMatched % 5 === 0 || idx === pendingRows.rows.length - 1) {
+                        // Atualizar progresso a cada 10 itens - 60% a 85%
+                        if (autoMatched % 10 === 0 || idx === pendingRows.rows.length - 1) {
+                            const matchProgress = 60 + Math.round((idx / pendingRows.rows.length) * 25);
                             uploadProgress.set(importId, {
                                 stage: 'matching',
-                                current: idx + 1,
-                                total: pendingRows.rows.length,
+                                current: matchProgress,
+                                total: 100,
                                 message: `Auto-relacionando: ${autoMatched} de ${pendingRows.rows.length}`
                             });
                         }
@@ -838,6 +855,15 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
             // 5. NORMALIZAR E POPULAR full_envio_item (usando função do banco)
             // Esta função lê de full_envio_raw e popula full_envio_item com SKUs validados
+
+            // Atualizar progresso - 90%
+            uploadProgress.set(importId, {
+                stage: 'normalizing',
+                current: 90,
+                total: 100,
+                message: `Normalizando dados...`
+            });
+
             try {
                 await pool.query(
                     `SELECT logistica.full_envio_normalizar($1::bigint)`,
@@ -860,12 +886,12 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 [insertedRows, finalStatus, importId]
             );
 
-            // Atualizar progresso - finalizado
+            // ✅ Atualizar progresso - 100% COMPLETED
             uploadProgress.set(importId, {
                 stage: 'completed',
-                current: insertedRows,
-                total: jsonData.length,
-                message: `Concluído! ${autoMatched} relacionados, ${remainingPending} pendentes`
+                current: 100,
+                total: 100,
+                message: `✅ Concluído! ${insertedRows} linhas | ${autoMatched} relacionados | ${remainingPending} pendentes`
             });
 
             // 7. ATUALIZAR STATUS DO ENVIO
@@ -882,6 +908,13 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
             // Registrar log de atividade
             try {
+                // Buscar nome do cliente para o log
+                const clientNameResult = await pool.query(
+                    `SELECT nome FROM obsidian.clientes WHERE id = $1`,
+                    [clientIdNum]
+                );
+                const clientName = clientNameResult.rows[0]?.nome || `ID ${clientIdNum}`;
+
                 await logActivity({
                     user_email: req.body.user_email || 'sistema',
                     user_name: req.body.user_name || 'Sistema',
@@ -890,8 +923,10 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     entity_id: envioId.toString(),
                     details: {
                         envio_num: envioNumValue,
+                        cliente: clientName,
                         filename,
                         total_linhas: jsonData.length,
+                        inseridas: insertedRows,
                         auto_relacionadas: autoMatched,
                         pendentes: remainingPending,
                         client_id: clientIdNum
@@ -933,12 +968,12 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
             console.log(`📦 Processando ${jsonData.length} linhas do Excel ML...`);
 
-            // Inicializar progresso
+            // ✅ Inicializar progresso - Etapa 1: Processando
             uploadProgress.set(batchId, {
                 stage: 'processing',
-                current: 0,
-                total: jsonData.length,
-                message: 'Processando arquivo Excel...'
+                current: 10,
+                total: 100,
+                message: `Processando ${jsonData.length} linhas do Excel...`
             });
 
             // OTIMIZAÇÃO: Preparar dados em lote para bulk insert
@@ -1058,6 +1093,15 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
             // Deduplicar dados antes de inserir (evitar "cannot affect row a second time")
             console.log(`🔍 Deduplicando ${valuesToInsert.length} linhas...`);
+
+            // Atualizar progresso - 20%
+            uploadProgress.set(batchId, {
+                stage: 'deduplicating',
+                current: 20,
+                total: 100,
+                message: `Deduplicando ${valuesToInsert.length} linhas...`
+            });
+
             const uniqueMap = new Map();
             for (const row of valuesToInsert) {
                 // Chave única: client_id + Nº Pedido + sku_text + qty + unit_price
@@ -1072,6 +1116,14 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             const BATCH_SIZE = 500;
             const NUM_FIELDS = 79; // Total de campos que estamos inserindo
             console.log(`📦 Inserindo ${uniqueValues.length} linhas em lotes de ${BATCH_SIZE}...`);
+
+            // Atualizar progresso - 30%
+            uploadProgress.set(batchId, {
+                stage: 'inserting',
+                current: 30,
+                total: 100,
+                message: `Inserindo ${uniqueValues.length} linhas no banco...`
+            });
 
             for (let i = 0; i < uniqueValues.length; i += BATCH_SIZE) {
                 const batch = uniqueValues.slice(i, i + BATCH_SIZE);
@@ -1251,11 +1303,12 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     insertedRows += batch.length;
                     console.log(`  ✅ Lote ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} linhas inseridas/atualizadas`);
 
-                    // Atualizar progresso
+                    // Atualizar progresso - 30% a 50%
+                    const insertProgress = 30 + Math.round((insertedRows / uniqueValues.length) * 20);
                     uploadProgress.set(batchId, {
                         stage: 'inserting',
-                        current: insertedRows,
-                        total: uniqueValues.length,
+                        current: insertProgress,
+                        total: 100,
                         message: `Inserindo ${insertedRows}/${uniqueValues.length} linhas...`
                     });
                 } catch (batchError: any) {
@@ -1275,12 +1328,12 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             if (insertedRows > 0) {
                 console.log(`🔄 Iniciando auto-relacionamento...`);
 
-                // Inicializar progresso
+                // ✅ Progresso: 50% - iniciando relacionamento
                 uploadProgress.set(batchId, {
                     stage: 'relating',
-                    current: 0,
-                    total: 0,
-                    message: 'Iniciando auto-relacionamento...'
+                    current: 50,
+                    total: 100,
+                    message: `Iniciando relacionamento de SKUs...`
                 });
 
                 // Buscar todas as linhas recém-inseridas (incluindo SKU Armazém)
@@ -1293,11 +1346,11 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
                 console.log(`📦 Processando ${pendingRows.rows.length} linhas para auto-relacionamento em batches...`);
 
-                // Atualizar progresso
+                // Atualizar progresso - 55%
                 uploadProgress.set(batchId, {
                     stage: 'relating',
-                    current: 0,
-                    total: pendingRows.rows.length,
+                    current: 55,
+                    total: 100,
                     message: `Relacionando 0/${pendingRows.rows.length} SKUs...`
                 });
 
@@ -1310,11 +1363,12 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
                     console.log(`🔍 Relacionando batch ${batchNum}/${totalBatches} (${batch.length} linhas)...`);
 
-                    // Atualizar progresso
+                    // Atualizar progresso - 55% a 90%
+                    const relateProgress = 55 + Math.round((i / pendingRows.rows.length) * 35);
                     uploadProgress.set(batchId, {
                         stage: 'relating',
-                        current: i,
-                        total: pendingRows.rows.length,
+                        current: relateProgress,
+                        total: 100,
                         message: `Batch ${batchNum}/${totalBatches} - ${autoMatched} relacionados`
                     });
 
@@ -1433,12 +1487,12 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
 
                 console.log(`✅ Auto-relacionamento concluído: ${autoMatched} itens relacionados`);
 
-                // Atualizar progresso final
+                // ✅ Atualizar progresso - 90%
                 uploadProgress.set(batchId, {
-                    stage: 'completed',
-                    current: pendingRows.rows.length,
-                    total: pendingRows.rows.length,
-                    message: `✅ Concluído! ${autoMatched} relacionados`
+                    stage: 'finalizing',
+                    current: 90,
+                    total: 100,
+                    message: `Finalizando... ${autoMatched} de ${pendingRows.rows.length} relacionados`
                 });
             }
 
@@ -1460,6 +1514,14 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                  WHERE import_id = $2`,
                 [insertedRows, batchId]
             );
+
+            // ✅ PROGRESSO FINAL - 100% COMPLETED
+            uploadProgress.set(batchId, {
+                stage: 'completed',
+                current: 100,
+                total: 100,
+                message: `✅ Concluído! ${insertedRows} linhas | ${autoMatched} relacionados | ${remainingPending} pendentes`
+            });
 
             // Registrar log de atividade
             try {
@@ -2155,6 +2217,29 @@ enviosRouter.post('/relacionar-manual', async (req: Request, res: Response) => {
             }
         }
 
+        // Registrar log de atividade
+        try {
+            await logActivity({
+                user_email: req.body.user_email || 'sistema',
+                user_name: req.body.user_name || 'Sistema',
+                action: 'relate_manual',
+                entity_type: 'full_envio_raw',
+                entity_id: raw_id.toString(),
+                details: {
+                    raw_id,
+                    sku_original: rawData.sku_texto,
+                    stock_sku,
+                    client_id: clientIdNum,
+                    learn,
+                    codigo_ml: rawData.codigo_ml
+                },
+                ip_address: req.ip,
+                user_agent: req.get('user-agent')
+            });
+        } catch (logError) {
+            console.error('⚠️ Erro ao salvar log (não afeta operação):', logError);
+        }
+
         res.json({
             success: true,
             message: learn ? 'Relacionado e aprendido com sucesso' : 'Relacionado com sucesso'
@@ -2558,6 +2643,7 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
     try {
         const { envio_id, import_id, source } = req.body;
 
+        console.log('📦 Emitir vendas - Body recebido:', { envio_id, import_id, source });
 
         if (source === 'FULL') {
             if (!envio_id) {
@@ -2673,27 +2759,58 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
             });
         } else if (source === 'ML') {
             // ML: Processar vendas do Mercado Livre
-            const { client_id } = req.body;
 
+            // ✅ REGRA: import_id é OBRIGATÓRIO para ML (cada import deve ser emitido individualmente)
+            // Se não tiver import_id mas tiver client_id, busca o último import daquele cliente
+            let finalImportId = import_id;
 
-            // Construir filtros - APENAS itens que ainda não foram emitidos
-            let whereClause = `WHERE status = 'matched' AND matched_sku IS NOT NULL`;
-            const params: any[] = [];
+            if (!finalImportId && req.body.client_id) {
+                // client_id pode ser número (ID) ou string (nome do cliente)
+                let clientIdNum: number | null = null;
 
-            // Aplicar filtro por client_id
-            if (client_id) {
-                const clientIdNum = await normalizeClientId(client_id);
+                // Tentar converter para número
+                const parsedId = parseInt(req.body.client_id);
+                if (!isNaN(parsedId)) {
+                    clientIdNum = parsedId;
+                } else {
+                    // É nome do cliente, buscar ID
+                    const clientResult = await pool.query(
+                        `SELECT id FROM obsidian.clientes WHERE nome = $1 LIMIT 1`,
+                        [req.body.client_id]
+                    );
+                    if (clientResult.rows.length > 0) {
+                        clientIdNum = clientResult.rows[0].id;
+                        console.log(`📦 Cliente "${req.body.client_id}" → ID ${clientIdNum}`);
+                    }
+                }
+
                 if (clientIdNum) {
-                    params.push(clientIdNum);
-                    whereClause += ` AND client_id = $${params.length}`;
+                    const lastImportResult = await pool.query(
+                        `SELECT import_id 
+                         FROM raw_export_orders 
+                         WHERE client_id = $1 
+                           AND status = 'matched'
+                         ORDER BY created_at DESC 
+                         LIMIT 1`,
+                        [clientIdNum]
+                    );
+
+                    if (lastImportResult.rows.length > 0) {
+                        finalImportId = lastImportResult.rows[0].import_id;
+                        console.log(`📦 client_id ${clientIdNum} → import_id ${finalImportId}`);
+                    }
                 }
             }
 
-            // Aplicar filtro por import_id APENAS se foi explicitamente fornecido
-            if (import_id) {
-                params.push(import_id);
-                whereClause += ` AND import_id = $${params.length}`;
+            if (!finalImportId) {
+                return res.status(400).json({
+                    error: 'import_id é obrigatório para emitir vendas do ML'
+                });
             }
+
+            // Construir filtros - APENAS itens deste import específico
+            let whereClause = `WHERE status = 'matched' AND matched_sku IS NOT NULL AND import_id = $1`;
+            const params: any[] = [finalImportId];
 
             // Buscar itens relacionados agrupados por pedido
             const ordersResult = await pool.query(
@@ -2706,6 +2823,7 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                     "Estado do Pedido" as estado_pedido,
                     "Pós-venda/Cancelado/Devolvido" as pos_venda,
                     "Razão do Cancelamento" as razao_cancelamento,
+                    "Nº de Rastreio" as codigo_rastreio,
                     client_id,
                     json_agg(json_build_object(
                         'sku', matched_sku,
@@ -2714,7 +2832,7 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                     )) as items
                  FROM raw_export_orders
                  ${whereClause}
-                 GROUP BY order_id, order_date, customer, channel, "Método de Envio", "Estado do Pedido", "Pós-venda/Cancelado/Devolvido", "Razão do Cancelamento", client_id
+                 GROUP BY order_id, order_date, customer, channel, "Método de Envio", "Estado do Pedido", "Pós-venda/Cancelado/Devolvido", "Razão do Cancelamento", "Nº de Rastreio", client_id
                  ORDER BY order_id`,
                 params
             );
@@ -2771,7 +2889,34 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
 
                         if (vendaExistente.rows.length > 0) {
                             // ===== ESTORNAR VENDA CANCELADA =====
-                            // 1. DEVOLVER ESTOQUE (aumentar quantidade_atual)
+
+                            // 1. CRIAR REGISTRO DE DEVOLUÇÃO FÍSICA PENDENTE **ANTES** DE DELETAR A VENDA
+                            // (produto está voltando, precisa conferir quando chegar)
+                            for (const venda of vendaExistente.rows) {
+                                await pool.query(
+                                    `INSERT INTO public.devolucoes (
+                                        pedido_uid,
+                                        sku_produto,
+                                        quantidade_esperada,
+                                        tipo_problema,
+                                        motivo_cancelamento,
+                                        codigo_rastreio
+                                    ) VALUES ($1, $2, $3, 'pendente', $4, $5)
+                                    ON CONFLICT (pedido_uid, sku_produto) 
+                                    DO UPDATE SET 
+                                        codigo_rastreio = EXCLUDED.codigo_rastreio,
+                                        motivo_cancelamento = EXCLUDED.motivo_cancelamento`,
+                                    [
+                                        pedidoUid,
+                                        venda.sku_produto,
+                                        venda.quantidade_vendida,
+                                        razaoCancelamento || 'Cancelado no ML',
+                                        order.codigo_rastreio || null
+                                    ]
+                                );
+                            }
+
+                            // 2. DEVOLVER ESTOQUE (aumentar quantidade_atual)
                             for (const venda of vendaExistente.rows) {
                                 await pool.query(
                                     `UPDATE obsidian.produtos 
@@ -2783,19 +2928,42 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                                 console.log(`📦 Estoque devolvido: ${venda.quantidade_vendida}x ${venda.sku_produto}`);
                             }
 
-                            // 2. REMOVER venda da tabela (regra: "deve ser removida ao atualizar status para cancelado")
+                            // 3. REMOVER venda da tabela (por último, para não perder a FK da devolução)
                             await pool.query(
                                 `DELETE FROM obsidian.vendas WHERE pedido_uid = $1`,
                                 [pedidoUid]
                             );
 
                             cancelados_removidos++;
-                            console.log(`🗑️ Venda estornada - Pedido cancelado: ${order.order_id} (${vendaExistente.rows.length} itens)`);
+                            console.log(`🗑️ ESTORNO - Pedido ${order.order_id} estava OK no import anterior, agora veio cancelado (${vendaExistente.rows.length} itens) → Devolução criada`);
                         } else {
                             // Apenas pular (não emitir nova venda)
                             cancelados_skipped++;
+                            console.log(`⏭️ Pulando pedido ${order.order_id} - JÁ VEIO CANCELADO no primeiro import`);
                         }
                         continue; // Não processar este pedido
+                    }
+
+                    // ===== VERIFICAR SE PEDIDO ESTAVA CANCELADO E AGORA VOLTOU NORMAL =====
+                    const pedidoUid = `ML-${order.order_id}`;
+                    const devolucaoExistente = await pool.query(
+                        `SELECT pedido_uid, sku_produto, quantidade_esperada 
+                         FROM public.devolucoes 
+                         WHERE pedido_uid = $1`,
+                        [pedidoUid]
+                    );
+
+                    if (devolucaoExistente.rows.length > 0) {
+                        // Pedido estava cancelado mas agora voltou normal!
+                        console.log(`🔄 REVERSÃO - Pedido ${order.order_id} estava cancelado, agora voltou normal → Removendo devolução`);
+
+                        // Remover devolução (pedido foi reativado pelo ML)
+                        await pool.query(
+                            `DELETE FROM public.devolucoes WHERE pedido_uid = $1`,
+                            [pedidoUid]
+                        );
+
+                        // Continuar processamento normal abaixo (vai criar a venda)
                     }
 
                     // ===== REGRA 2: VERIFICAR FULFILLMENT =====
@@ -2884,21 +3052,36 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
 
             // Registrar log de atividade
             try {
+                // Buscar client_id do primeiro pedido para log
+                const firstOrder = ordersResult.rows[0];
+                const clientIdForLog = firstOrder?.client_id;
+
+                let clientName = 'Sistema';
+                if (clientIdForLog) {
+                    const clientNameResult = await pool.query(
+                        `SELECT nome FROM obsidian.clientes WHERE id = $1`,
+                        [clientIdForLog]
+                    );
+                    clientName = clientNameResult.rows[0]?.nome || `ID ${clientIdForLog}`;
+                }
+
                 await logActivity({
                     user_email: req.body.user_email || 'sistema',
                     user_name: req.body.user_name || 'Sistema',
-                    action: 'emit_sales',
+                    action: 'emit_sales_ml',
                     entity_type: 'pedidos',
-                    entity_id: import_id || client_id?.toString() || 'unknown',
+                    entity_id: finalImportId,
                     details: {
                         source: 'ML',
+                        cliente: clientName,
+                        import_id: finalImportId,
                         candidatos: ordersResult.rows.length,
                         inseridos,
                         ja_existiam,
                         full_skipped,
                         cancelados_skipped,
                         cancelados_removidos,
-                        client_id
+                        erros: erros.length
                     },
                     ip_address: req.ip,
                     user_agent: req.get('user-agent')

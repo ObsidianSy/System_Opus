@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,7 @@ interface FullKitRelationModalProps {
     rawId: number;
     skuOriginal: string;
     onKitRelated: (sku: string) => void;
+    envioId?: number; // ✅ Adicionar envioId para buscar client_id dinamicamente
 }
 
 export function FullKitRelationModal({
@@ -27,6 +28,7 @@ export function FullKitRelationModal({
     rawId,
     skuOriginal,
     onKitRelated,
+    envioId, // ✅ Receber envioId
 }: FullKitRelationModalProps) {
     const { toast } = useToast();
 
@@ -43,6 +45,32 @@ export function FullKitRelationModal({
 
     // Estado para relacionamento
     const [isRelating, setIsRelating] = useState(false);
+
+    // ✅ Estado para armazenar o client_id do envio
+    const [clientId, setClientId] = useState<number | null>(null);
+
+    // ✅ Buscar client_id do envio quando o modal abrir
+    useEffect(() => {
+        const fetchClientId = async () => {
+            if (open && envioId) {
+                try {
+                    const response = await fetch(`/api/envios/full/${envioId}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        setClientId(data.client_id);
+                    } else {
+                        console.warn('Não foi possível buscar client_id, usando padrão 1');
+                        setClientId(1); // Fallback
+                    }
+                } catch (error) {
+                    console.error('Erro ao buscar client_id:', error);
+                    setClientId(1); // Fallback
+                }
+            }
+        };
+
+        fetchClientId();
+    }, [open, envioId]);
 
     const addComponent = () => {
         setComponents([...components, { sku: '', quantidade: 1 }]);
@@ -204,7 +232,7 @@ export function FullKitRelationModal({
                 body: JSON.stringify({
                     raw_id: rawId,
                     stock_sku: searchResult.sku,
-                    client_id: 1, // FULL sempre usa client_id 1 (ajustar se necessário)
+                    client_id: clientId || 1, // ✅ Usar client_id do envio ou fallback
                     learn: true,
                 }),
             });

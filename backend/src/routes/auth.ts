@@ -19,7 +19,7 @@ router.post('/login', async (req: any, res: Response) => {
     try {
         // Buscar usuário no banco
         const result = await pool.query(
-            `SELECT id, nome, email, senha_hash, ativo 
+            `SELECT id, nome, email, senha_hash, ativo, cargo 
        FROM obsidian.usuarios 
        WHERE email = $1`,
             [email]
@@ -47,7 +47,8 @@ router.post('/login', async (req: any, res: Response) => {
             {
                 id: usuario.id,
                 nome: usuario.nome,
-                email: usuario.email
+                email: usuario.email,
+                cargo: usuario.cargo
             },
             JWT_SECRET,
             { expiresIn: '24h' }
@@ -58,7 +59,8 @@ router.post('/login', async (req: any, res: Response) => {
             usuario: {
                 id: usuario.id,
                 nome: usuario.nome,
-                email: usuario.email
+                email: usuario.email,
+                cargo: usuario.cargo
             }
         });
 
@@ -81,7 +83,7 @@ router.get('/verify', async (req: any, res: Response) => {
 
         // Verificar se usuário ainda existe e está ativo
         const result = await pool.query(
-            `SELECT id, nome, email, ativo 
+            `SELECT id, nome, email, ativo, cargo 
        FROM obsidian.usuarios 
        WHERE id = $1`,
             [decoded.id]
@@ -93,7 +95,8 @@ router.get('/verify', async (req: any, res: Response) => {
             usuario: {
                 id: result.rows[0].id,
                 nome: result.rows[0].nome,
-                email: result.rows[0].email
+                email: result.rows[0].email,
+                cargo: result.rows[0].cargo
             }
         });
 

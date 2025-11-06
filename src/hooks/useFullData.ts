@@ -59,7 +59,7 @@ export const useFullData = (envioNum?: string) => {
     },
   });
 
-  const { data: pendencias, isLoading: isLoadingPendencias } = useQuery({
+  const { data: pendencias, isLoading: isLoadingPendencias, refetch: refreshPendencias } = useQuery({
     queryKey: ["full-pendencias"],
     queryFn: async (): Promise<FullPendencia[]> => {
       return await importService.getFullPendencias();
@@ -145,6 +145,7 @@ export const useFullData = (envioNum?: string) => {
     isLoadingKPIs,
     pendencias,
     isLoadingPendencias,
+    refreshPendencias, // ✅ Exportar função de refresh
     relacionados,
     isLoadingRelacionados,
     todos,

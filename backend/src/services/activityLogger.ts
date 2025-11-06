@@ -19,7 +19,7 @@ export async function logActivity(data: ActivityLogData): Promise<void> {
         await pool.query(
             `INSERT INTO obsidian.activity_logs 
              (user_email, user_name, action, entity_type, entity_id, details, ip_address, user_agent, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW() AT TIME ZONE 'America/Sao_Paulo')`,
             [
                 data.user_email,
                 data.user_name || null,
@@ -32,7 +32,7 @@ export async function logActivity(data: ActivityLogData): Promise<void> {
             ]
         );
 
-        console.log(`📝 Log registrado: ${data.user_email} - ${data.action}`);
+        console.log(`📝 Log registrado: ${data.user_email} - ${data.action} - ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
     } catch (error) {
         console.error('❌ Erro ao registrar log:', error);
         // Não lançar erro para não quebrar a operação principal
@@ -51,7 +51,18 @@ export async function getActivityLogs(filters: {
     limit?: number;
     offset?: number;
 }) {
-    let query = 'SELECT * FROM obsidian.activity_logs WHERE 1=1';
+    let query = `SELECT 
+        id,
+        user_email,
+        user_name,
+        action,
+        entity_type,
+        entity_id,
+        details,
+        ip_address,
+        user_agent,
+        created_at AT TIME ZONE 'America/Sao_Paulo' as created_at
+    FROM obsidian.activity_logs WHERE 1=1`;
     const params: any[] = [];
 
     if (filters.user_email) {
@@ -109,13 +120,11 @@ export async function getActivitySummary() {
 export async function getActivityStats(days: number = 7) {
     const result = await pool.query(
         `SELECT 
-            COUNT(DISTINCT user_email) as total_users,
-            COUNT(*) as total_actions,
-            COUNT(*) FILTER (WHERE action = 'upload_full') as total_uploads,
-            COUNT(*) FILTER (WHERE action = 'emit_sales') as total_emissions,
-            COUNT(*) FILTER (WHERE action = 'relate_item') as total_relations
-         FROM obsidian.activity_logs
-         WHERE created_at >= NOW() - INTERVAL '${days} days'`
+            COUNT(*) as total_logs,
+            COUNT(DISTINCT user_email) as unique_users,
+            COUNT(*) FILTER (WHERE created_at AT TIME ZONE 'America/Sao_Paulo' >= CURRENT_DATE AT TIME ZONE 'America/Sao_Paulo') as today_logs,
+            COUNT(*) FILTER (WHERE created_at AT TIME ZONE 'America/Sao_Paulo' >= (CURRENT_DATE - INTERVAL '7 days') AT TIME ZONE 'America/Sao_Paulo') as this_week_logs
+         FROM obsidian.activity_logs`
     );
 
     return result.rows[0];

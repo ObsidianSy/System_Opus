@@ -13,7 +13,8 @@ import {
   Truck,
   LogOut,
   Activity,
-  PackageX
+  PackageX,
+  Shield
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 
@@ -112,7 +113,7 @@ const data = {
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { state } = useSidebar()
   const location = useLocation()
-  const { usuario, logout } = useAuth()
+  const { usuario, logout, isAdmin } = useAuth()
 
   const isActive = (url: string) => {
     if (url === "/") {
@@ -195,6 +196,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <User2 />
                   Perfil
                 </DropdownMenuItem>
+                {isAdmin() && (
+                  <DropdownMenuItem className="cursor-pointer" asChild>
+                    <NavLink to="/usuarios">
+                      <Shield />
+                      Gerenciar Usuários
+                    </NavLink>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem className="cursor-pointer">
                   <Settings />
                   Configurações

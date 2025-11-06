@@ -6,6 +6,7 @@ interface Usuario {
     id: string;
     nome: string;
     email: string;
+    cargo: 'adm' | 'operador';
 }
 
 interface AuthContextType {
@@ -13,6 +14,7 @@ interface AuthContextType {
     token: string | null;
     isAuthenticated: boolean;
     loading: boolean;
+    isAdmin: () => boolean;
     login: (token: string, usuario: Usuario) => void;
     logout: () => void;
 }
@@ -77,6 +79,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         navigate('/login');
     };
 
+    const isAdmin = () => {
+        return usuario?.cargo === 'adm';
+    };
+
     return (
         <AuthContext.Provider
             value={{
@@ -84,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 token,
                 isAuthenticated: !!token,
                 loading,
+                isAdmin,
                 login,
                 logout,
             }}

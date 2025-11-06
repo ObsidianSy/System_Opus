@@ -15,6 +15,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { FullKitRelationModal } from '../full/FullKitRelationModal';
+import { API_BASE_URL } from '@/config/api';
 
 const SOURCE_LABELS = {
   exact: { label: 'Exato', variant: 'default' as const },
@@ -71,7 +72,7 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
     const carregarProdutos = async () => {
       try {
         setLoadingProdutos(true);
-        const response = await fetch('/api/estoque');
+        const response = await fetch(`${API_BASE_URL}/api/estoque`);
         const data = await response.json();
         setTodosProdutos(data || []);
       } catch (error) {
@@ -147,6 +148,7 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
         preco_unitario: p.preco_unitario,
         quantidade_atual: p.quantidade_atual,
         is_kit: p.is_kit || p.tipo_produto === 'KIT',
+        foto_url: p.foto_url,
         source: 'fuzzy' as const,
         score: 1.0
       }));
@@ -182,6 +184,7 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
           preco_unitario: p.preco_unitario,
           quantidade_atual: p.quantidade_atual,
           is_kit: p.is_kit || p.tipo_produto === 'KIT',
+          foto_url: p.foto_url,
           source: source,
           score: score
         });
@@ -633,7 +636,15 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
                                       setSearchResults(prev => ({ ...prev, [itemKey]: resultados }));
                                     }
                                   }}>
-                                    <Search className="h-4 w-4 mr-2" />
+                                    {selectedSku?.foto_url ? (
+                                      <img
+                                        src={`${API_BASE_URL}${selectedSku.foto_url}`}
+                                        alt={selectedSku.sku}
+                                        className="h-6 w-6 mr-2 rounded object-cover bg-muted"
+                                      />
+                                    ) : (
+                                      <Search className="h-4 w-4 mr-2" />
+                                    )}
                                     {selectedSku ? `${selectedSku.sku} - ${selectedSku.nome}` : 'Buscar SKU...'}
                                   </Button>
                                 </PopoverTrigger>
@@ -663,6 +674,17 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
                                                 }}
                                                 className="flex items-start gap-2 p-3 cursor-pointer"
                                               >
+                                                {result.foto_url ? (
+                                                  <img
+                                                    src={`${API_BASE_URL}${result.foto_url}`}
+                                                    alt={result.sku}
+                                                    className="h-8 w-8 rounded object-cover bg-muted"
+                                                  />
+                                                ) : (
+                                                  <div className="h-8 w-8 rounded bg-muted flex items-center justify-center text-xs font-medium">
+                                                    {(result.sku || '?').slice(0, 2)}
+                                                  </div>
+                                                )}
                                                 <div className="flex-1 space-y-1">
                                                   <div className="flex items-center gap-2">
                                                     <span className="font-semibold">{result.sku}</span>
@@ -769,6 +791,7 @@ export const FullRelateItemsTab = memo(function FullRelateItemsTab({
           onOpenChange={setKitModalOpen}
           rawId={selectedItemForKit.raw_id}
           skuOriginal={selectedItemForKit.sku_texto}
+          envioId={currentEnvio?.envioId} // ✅ Passar envio_id do currentEnvio
           onKitRelated={(sku) => {
             console.log('Kit relacionado:', sku);
             setKitModalOpen(false);
