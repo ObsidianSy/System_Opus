@@ -41,8 +41,7 @@ export const optionalAuth = (req: AuthRequest, res: Response, next: NextFunction
             cargo: decoded.cargo
         };
     } catch (error) {
-        // Token inválido, mas não bloqueia a requisição
-        console.warn('⚠️ Token inválido ou expirado, continuando sem autenticação');
+        // Token inválido, mas não bloqueia a requisição (silenciosamente)
     }
 
     next();

@@ -49,8 +49,12 @@ export const importService = {
     }
 
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch(IMPORT_WEBHOOK_URL, {
         method: 'POST',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
         body: formData,
       });
 
@@ -247,10 +251,12 @@ export const importService = {
   // Auto-relacionar todos os pendentes (varredura geral)
   async autoRelateAll(clientId?: string, source: 'ML' | 'FULL' = 'ML'): Promise<ImportSummary> {
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch(AUTO_RELATE_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ client_id: clientId, source }),
       });
@@ -341,9 +347,13 @@ export const importService = {
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
       try {
+        const token = localStorage.getItem('token');
         const response = await fetch(RELATE_ITEM_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify(cleanPayload),
           signal: controller.signal,
         });
@@ -541,9 +551,13 @@ export const importService = {
 
     console.log('📤 importService.emitirVendas - Enviando:', params);
 
+    const token = localStorage.getItem('token');
     const response = await fetch(EMITIR_VENDAS_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({ ...params, source: params.source || 'ML' }),
     });
 
@@ -685,8 +699,12 @@ export const importService = {
       formData.append('user_name', userName);
     }
 
+    const token = localStorage.getItem('token');
     const response = await fetch('/api/envios', {
       method: 'POST',
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
       body: formData,
     });
 
@@ -761,9 +779,13 @@ export const importService = {
       source: 'FULL',
     };
 
+    const token = localStorage.getItem('token');
     const response = await fetch('/api/envios/match-line', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(payload),
     });
 

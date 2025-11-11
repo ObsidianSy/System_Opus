@@ -130,10 +130,12 @@ export const enviarDados = async (request: N8nRequest): Promise<boolean> => {
       method = 'DELETE';
     }
 
+    const token = localStorage.getItem('token');
     const response = await fetch(url, {
       method,
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       },
       body: method !== 'DELETE' ? JSON.stringify(mapDataToApi(request.data, request.sheetName)) : undefined,
     });
