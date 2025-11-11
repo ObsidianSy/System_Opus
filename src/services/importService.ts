@@ -350,7 +350,7 @@ export const importService = {
         const token = localStorage.getItem('token');
         const response = await fetch(RELATE_ITEM_URL, {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
             ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
           },
@@ -554,7 +554,7 @@ export const importService = {
     const token = localStorage.getItem('token');
     const response = await fetch(EMITIR_VENDAS_URL, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       },
@@ -782,7 +782,7 @@ export const importService = {
     const token = localStorage.getItem('token');
     const response = await fetch('/api/envios/match-line', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       },
