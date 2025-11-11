@@ -467,7 +467,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
               <div className="grid grid-cols-3 gap-2">
                 <div className="space-y-2">
                   <Label htmlFor="produto">SKU *</Label>
-                  <Popover open={openProduto} onOpenChange={setOpenProduto}>
+                  <Popover open={openProduto} onOpenChange={setOpenProduto} modal={false}>
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"

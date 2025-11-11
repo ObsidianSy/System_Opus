@@ -31,10 +31,8 @@ export async function logActivity(data: ActivityLogData): Promise<void> {
                 data.user_agent || null
             ]
         );
-
-        console.log(`📝 Log registrado: ${data.user_email} - ${data.action} - ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
     } catch (error) {
-        console.error('❌ Erro ao registrar log:', error);
+        console.error('Erro ao registrar log:', error);
         // Não lançar erro para não quebrar a operação principal
     }
 }

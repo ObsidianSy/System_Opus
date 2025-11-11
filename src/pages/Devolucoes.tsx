@@ -531,7 +531,7 @@ const Devolucoes = () => {
                                             Qual produto foi realmente recebido? *
                                         </Label>
 
-                                        <Popover open={openSkuSelect} onOpenChange={setOpenSkuSelect}>
+                                        <Popover open={openSkuSelect} onOpenChange={setOpenSkuSelect} modal={false}>
                                             <PopoverTrigger asChild>
                                                 <Button
                                                     variant="outline"

@@ -126,7 +126,7 @@ const ReceitaProdutoForm = ({ onSuccess }: ReceitaProdutoFormProps) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
             <Label htmlFor="skuProduto">Produto *</Label>
-            <Popover open={openProduto} onOpenChange={setOpenProduto}>
+            <Popover open={openProduto} onOpenChange={setOpenProduto} modal={false}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
@@ -179,7 +179,7 @@ const ReceitaProdutoForm = ({ onSuccess }: ReceitaProdutoFormProps) => {
 
           <div className="space-y-2">
             <Label htmlFor="skuMateriaPrima">Matéria-Prima *</Label>
-            <Popover open={openMateriaPrima} onOpenChange={setOpenMateriaPrima}>
+            <Popover open={openMateriaPrima} onOpenChange={setOpenMateriaPrima} modal={false}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"

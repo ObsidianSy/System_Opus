@@ -110,20 +110,16 @@ enviosRouter.get('/upload-progress/:importId', (req: Request, res: Response) => 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.flushHeaders(); // Forçar envio dos headers
 
-    console.log(`📡 Cliente conectou ao SSE para importId: ${importId}`);
-
     // Enviar progresso inicial imediatamente
     const sendProgress = () => {
         const progress = uploadProgress.get(importId);
         if (progress) {
             const data = JSON.stringify(progress);
             res.write(`data: ${data}\n\n`);
-            console.log(`📊 Enviando progresso: ${progress.stage} - ${progress.current}/${progress.total} (${progress.message})`);
 
             // Se completou, fechar conexão após 2 segundos
             if (progress.stage === 'completed' || progress.stage === 'error') {
                 setTimeout(() => {
-                    console.log(`✅ Upload ${importId} finalizado, limpando memória`);
                     uploadProgress.delete(importId);
                     res.end();
                 }, 2000);
@@ -147,7 +143,6 @@ enviosRouter.get('/upload-progress/:importId', (req: Request, res: Response) => 
 
     // Cleanup quando cliente desconectar
     req.on('close', () => {
-        console.log(`🔌 Cliente desconectou do SSE: ${importId}`);
         clearInterval(interval);
         res.end();
     });
@@ -855,7 +850,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             );
             const remainingPending = parseInt(pendingCount.rows[0].count);
 
-            console.log(`✅ Auto-relacionamento concluído: ${autoMatched} itens relacionados, ${remainingPending} pendentes`);
+            console.log(`Auto-relacionamento concluído: ${autoMatched} itens relacionados, ${remainingPending} pendentes`);
 
             // 5. NORMALIZAR E POPULAR full_envio_item (usando função do banco)
             // Esta função lê de full_envio_raw e popula full_envio_item com SKUs validados
@@ -873,9 +868,8 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     `SELECT logistica.full_envio_normalizar($1::bigint)`,
                     [envioId]
                 );
-                console.log(`📦 Normalização concluída - full_envio_item populada`);
             } catch (normError: any) {
-                console.error('⚠️ Erro ao normalizar:', normError.message);
+                console.error('Erro ao normalizar:', normError.message);
                 // Continua mesmo com erro na normalização
             }
 
@@ -1096,7 +1090,6 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             }
 
             // Deduplicar dados antes de inserir (evitar "cannot affect row a second time")
-            console.log(`🔍 Deduplicando ${valuesToInsert.length} linhas...`);
 
             // Atualizar progresso - 20%
             uploadProgress.set(batchId, {
@@ -1114,12 +1107,10 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 uniqueMap.set(key, row); // Se duplicado, mantém o último
             }
             const uniqueValues = Array.from(uniqueMap.values());
-            console.log(`✅ ${uniqueValues.length} linhas únicas (${valuesToInsert.length - uniqueValues.length} duplicatas removidas)`);
 
             // BULK INSERT em lotes de 500 linhas
             const BATCH_SIZE = 500;
             const NUM_FIELDS = 79; // Total de campos que estamos inserindo
-            console.log(`📦 Inserindo ${uniqueValues.length} linhas em lotes de ${BATCH_SIZE}...`);
 
             // Atualizar progresso - 30%
             uploadProgress.set(batchId, {
@@ -1305,7 +1296,6 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                         flatValues
                     );
                     insertedRows += batch.length;
-                    console.log(`  ✅ Lote ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} linhas inseridas/atualizadas`);
 
                     // Atualizar progresso - 30% a 50%
                     const insertProgress = 30 + Math.round((insertedRows / uniqueValues.length) * 20);
@@ -1316,22 +1306,19 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                         message: `Inserindo ${insertedRows}/${uniqueValues.length} linhas...`
                     });
                 } catch (batchError: any) {
-                    console.error(`❌ Erro no lote ${Math.floor(i / BATCH_SIZE) + 1}:`, batchError.message);
+                    console.error(`Erro no lote ${Math.floor(i / BATCH_SIZE) + 1}:`, batchError.message);
                     errors.push(`Lote ${Math.floor(i / BATCH_SIZE) + 1}: ${batchError.message}`);
                 }
             }
 
-            console.log(`✅ ${insertedRows} linhas inseridas em raw_export_orders`);
             if (skippedRows.length > 0) {
-                console.log(`⚠️  ${skippedRows.length} linhas puladas (sem SKU ou qtd <= 0)`);
+                console.error(`${skippedRows.length} linhas puladas (sem SKU ou qtd <= 0)`);
             }
 
             // AUTO-RELACIONAR com aliases aprendidos (igual ao FULL)
             let autoMatched = 0;
 
             if (insertedRows > 0) {
-                console.log(`🔄 Iniciando auto-relacionamento...`);
-
                 // ✅ Progresso: 50% - iniciando relacionamento
                 uploadProgress.set(batchId, {
                     stage: 'relating',
@@ -1348,8 +1335,6 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     [batchId]
                 );
 
-                console.log(`📦 Processando ${pendingRows.rows.length} linhas para auto-relacionamento em batches...`);
-
                 // Atualizar progresso - 55%
                 uploadProgress.set(batchId, {
                     stage: 'relating',
@@ -1364,8 +1349,6 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     const batch = pendingRows.rows.slice(i, i + RELATE_BATCH_SIZE);
                     const batchNum = Math.floor(i / RELATE_BATCH_SIZE) + 1;
                     const totalBatches = Math.ceil(pendingRows.rows.length / RELATE_BATCH_SIZE);
-
-                    console.log(`🔍 Relacionando batch ${batchNum}/${totalBatches} (${batch.length} linhas)...`);
 
                     // Atualizar progresso - 55% a 90%
                     const relateProgress = 55 + Math.round((i / pendingRows.rows.length) * 35);
@@ -1489,7 +1472,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                     }
                 }
 
-                console.log(`✅ Auto-relacionamento concluído: ${autoMatched} itens relacionados`);
+                console.log(`Auto-relacionamento concluído: ${autoMatched} itens relacionados`);
 
                 // ✅ Atualizar progresso - 90%
                 uploadProgress.set(batchId, {
@@ -1730,8 +1713,6 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
         // RELACIONAMENTO MANUAL INDIVIDUAL (ML)
         // ========================================
         if (raw_id && sku) {
-            console.log('📦 Relacionamento manual ML - raw_id:', raw_id, 'sku:', sku);
-
             // Buscar informações do item
             const itemResult = await pool.query(
                 `SELECT id, order_id, sku_text, client_id 
@@ -1746,13 +1727,6 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
 
             const item = itemResult.rows[0];
 
-            console.log('📝 ML - Atualizando item:', {
-                raw_id,
-                sku,
-                status_anterior: item.status,
-                sku_anterior: item.matched_sku
-            });
-
             // Atualizar o item com o SKU relacionado
             const updateResult = await pool.query(
                 `UPDATE raw_export_orders 
@@ -1764,16 +1738,11 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
                 [sku, raw_id]
             );
 
-            console.log('✅ ML - Item atualizado:', updateResult.rows[0]);
-            console.log('📊 ML - Linhas afetadas:', updateResult.rowCount);
-
             // 🔥 AUTO-RELACIONAMENTO EM LOTE: Buscar outros itens ML com o mesmo sku_text
             let autoRelacionados = 0;
             const skuTextNormalized = item.sku_text?.trim().toUpperCase();
 
             if (skuTextNormalized) {
-                console.log(`🔍 ML - Buscando outros itens pendentes com SKU "${skuTextNormalized}" do mesmo cliente...`);
-
                 // Buscar outros itens pendentes com o mesmo sku_text (exceto o que acabamos de relacionar)
                 const outrosPendentesResult = await pool.query(
                     `SELECT id, sku_text 
@@ -1786,8 +1755,6 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
                 );
 
                 if (outrosPendentesResult.rows.length > 0) {
-                    console.log(`📦 ML - Encontrados ${outrosPendentesResult.rows.length} itens pendentes com mesmo SKU. Auto-relacionando...`);
-
                     // Relacionar todos de uma vez (bulk update)
                     const idsParaRelacionar = outrosPendentesResult.rows.map((r: any) => r.id);
 
@@ -1801,9 +1768,6 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
                     );
 
                     autoRelacionados = outrosPendentesResult.rows.length;
-                    console.log(`✅ ML - ${autoRelacionados} itens auto-relacionados com sucesso!`);
-                } else {
-                    console.log(`ℹ️ ML - Nenhum outro item pendente encontrado com o SKU "${skuTextNormalized}"`);
                 }
             }
 
@@ -1828,10 +1792,8 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
                              VALUES ($1, $2, $3, 0.95, 1)`,
                             [item.client_id, textToLearn, sku]
                         );
-                        console.log('✅ Alias criado:', textToLearn, '->', sku);
                     } catch (insertError: any) {
                         if (insertError.code === '23505') {
-                            console.log('⚠️ Alias já existe (race condition), atualizando...');
                             const retryAlias = await pool.query(
                                 `SELECT id FROM obsidian.sku_aliases 
                                  WHERE client_id = $1 
@@ -1848,7 +1810,6 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
                                      WHERE id = $2`,
                                     [sku, retryAlias.rows[0].id]
                                 );
-                                console.log('✅ Alias atualizado após retry:', textToLearn, '->', sku);
                             }
                         } else {
                             throw insertError;
@@ -1863,11 +1824,9 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
                          WHERE id = $2`,
                         [sku, existingAlias.rows[0].id]
                     );
-                    console.log('✅ Alias atualizado:', textToLearn, '->', sku);
                 }
             }
 
-            console.log('✅ Item relacionado com sucesso');
             return res.json({
                 ok: true,
                 raw_id,
@@ -1969,7 +1928,6 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
             });
         } else {
             // ML: relacionar automaticamente via aliases
-            console.log('📦 Relacionando ML - client_id:', client_id, 'source:', source);
 
             // 🔧 Normalizar client_id (aceita nome ou ID)
             let clientIdNum: number | null = null;
@@ -1978,7 +1936,6 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
                 if (!clientIdNum) {
                     return res.status(400).json({ error: `Cliente "${client_id}" não encontrado` });
                 }
-                console.log(`✅ Cliente normalizado para ID: ${clientIdNum}`);
             }
 
             // Buscar todos os itens pendentes (filtrado por cliente se fornecido) - INCLUINDO SKU ARMAZÉM
@@ -1994,17 +1951,8 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
 
             const pendingItems = await pool.query(query, params);
 
-            console.log(`📦 Encontrados ${pendingItems.rows.length} itens pendentes para relacionar`);
-
             let matched = 0;
             let notMatched = 0;
-
-            // Log dos primeiros 5 itens para debug
-            console.log('📦 Primeiros 5 itens pendentes:', pendingItems.rows.slice(0, 5).map(i => ({
-                id: i.id,
-                sku_text: i.sku_text,
-                client_id: i.client_id
-            })));
 
             for (const item of pendingItems.rows) {
                 let matchedSku = null;
@@ -2070,7 +2018,7 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
                 }
             }
 
-            console.log(`✅ ML Relacionados: ${matched} | Pendentes: ${notMatched}`);
+            console.log(`ML Relacionados: ${matched} | Pendentes: ${notMatched}`);
 
             // Registrar log de atividade
             try {
@@ -2215,7 +2163,6 @@ enviosRouter.post('/relacionar-manual', async (req: Request, res: Response) => {
                     `SELECT logistica.full_envio_normalizar($1::bigint)`,
                     [envio_id]
                 );
-                console.log(`📦 Normalização executada para envio ${envio_id}`);
             } catch (normError: any) {
                 console.error('⚠️ Erro ao normalizar:', normError.message);
             }
@@ -2260,8 +2207,6 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
     try {
         const { raw_id, matched_sku, create_alias = true, alias_text, source } = req.body;
 
-        console.log('📦 Match-line recebido:', { raw_id, matched_sku, create_alias, alias_text, source });
-
         // Validação de campos obrigatórios
         if (!raw_id) {
             return res.status(400).json({ error: 'Campo raw_id é obrigatório' });
@@ -2288,13 +2233,6 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
         const clientId = rawData.client_id;
         const envioId = rawData.envio_id;
 
-        console.log('📝 Atualizando linha:', {
-            raw_id,
-            matched_sku,
-            status_anterior: rawData.status,
-            sku_anterior: rawData.matched_sku
-        });
-
         // Atualizar linha com o SKU relacionado
         const updateResult = await pool.query(
             `UPDATE logistica.full_envio_raw 
@@ -2306,16 +2244,11 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
             [matched_sku, raw_id]
         );
 
-        console.log('✅ Linha atualizada:', updateResult.rows[0]);
-        console.log('📊 Linhas afetadas:', updateResult.rowCount);
-
         // 🔥 AUTO-RELACIONAMENTO EM LOTE: Buscar outros itens com o mesmo sku_texto
         let autoRelacionados = 0;
         const skuTextoNormalized = rawData.sku_texto?.trim().toUpperCase();
 
         if (skuTextoNormalized) {
-            console.log(`🔍 Buscando outros itens pendentes com SKU "${skuTextoNormalized}" no mesmo envio...`);
-
             // Buscar outros itens pendentes com o mesmo sku_texto (exceto o que acabamos de relacionar)
             const outrosPendentesResult = await pool.query(
                 `SELECT id, sku_texto 
@@ -2328,8 +2261,6 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
             );
 
             if (outrosPendentesResult.rows.length > 0) {
-                console.log(`📦 Encontrados ${outrosPendentesResult.rows.length} itens pendentes com mesmo SKU. Auto-relacionando...`);
-
                 // Relacionar todos de uma vez (bulk update)
                 const idsParaRelacionar = outrosPendentesResult.rows.map((r: any) => r.id);
 
@@ -2343,9 +2274,6 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
                 );
 
                 autoRelacionados = outrosPendentesResult.rows.length;
-                console.log(`✅ ${autoRelacionados} itens auto-relacionados com sucesso!`);
-            } else {
-                console.log(`ℹ️ Nenhum outro item pendente encontrado com o SKU "${skuTextoNormalized}"`);
             }
         }
 
@@ -2364,8 +2292,6 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
                 [clientId, alias_text]
             );
 
-            console.log('📋 Aliases encontrados:', existingAlias.rows);
-
             if (existingAlias.rows.length === 0) {
                 // Alias não existe, tentar criar novo
                 try {
@@ -2375,12 +2301,10 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
                          VALUES ($1, $2, $3, 0.95, 1)`,
                         [clientId, alias_text, matched_sku]
                     );
-                    console.log('✅ Alias criado:', alias_text, '->', matched_sku);
                     aliasOps = 1;
                 } catch (insertError: any) {
                     // Se falhar por duplicata (race condition), buscar novamente e atualizar
                     if (insertError.code === '23505') {
-                        console.log('⚠️ Alias criado em paralelo, buscando novamente...');
                         const retryAlias = await pool.query(
                             `SELECT id FROM obsidian.sku_aliases 
                              WHERE client_id = $1 
@@ -2397,7 +2321,6 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
                                  WHERE id = $2`,
                                 [matched_sku, retryAlias.rows[0].id]
                             );
-                            console.log('✅ Alias atualizado após retry:', alias_text, '->', matched_sku);
                             aliasOps = 1;
                         }
                     } else {
@@ -2408,7 +2331,6 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
             } else {
                 // Alias já existe, apenas atualizar o uso
                 const existingSku = existingAlias.rows[0].stock_sku;
-                console.log('ℹ️ Alias já existe:', alias_text, '->', existingSku, '(atualizando para:', matched_sku, ')');
 
                 await pool.query(
                     `UPDATE obsidian.sku_aliases 
@@ -2438,9 +2360,8 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
                 `SELECT logistica.full_envio_normalizar($1::bigint)`,
                 [envioId]
             );
-            console.log(`📦 Normalização executada para envio ${envioId}`);
         } catch (normError: any) {
-            console.error('⚠️ Erro ao normalizar:', normError.message);
+            console.error('Erro ao normalizar:', normError.message);
         }
 
         // Registrar log de atividade
@@ -2551,8 +2472,6 @@ enviosRouter.post('/auto-relate', async (req: Request, res: Response) => {
                 params
             );
 
-            console.log(`🔍 Encontrados ${pendingResult.rows.length} itens para relacionar`);
-
             let matched = 0;
             const BATCH_SIZE = 1000;
             const matchedIds: string[] = [];
@@ -2569,8 +2488,6 @@ enviosRouter.post('/auto-relate', async (req: Request, res: Response) => {
                  ORDER BY confidence_default DESC, times_used DESC`
             );
             const aliasesMap = new Map(allAliases.rows.map(a => [a.normalized, { sku: a.stock_sku, id: a.id }]));
-
-            console.log(`📦 Carregados ${produtosMap.size} produtos e ${aliasesMap.size} aliases em memória`);
 
             // Processar em lote
             for (let i = 0; i < pendingResult.rows.length; i++) {
@@ -2606,7 +2523,6 @@ enviosRouter.post('/auto-relate', async (req: Request, res: Response) => {
                          WHERE raw_export_orders.id::text = data.id`,
                         [matchedIds, matchedSkus]
                     );
-                    console.log(`✅ Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${matchedIds.length} itens relacionados`);
                     matchedIds.length = 0;
                     matchedSkus.length = 0;
                 }
