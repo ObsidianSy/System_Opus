@@ -12,9 +12,9 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Trash2, Plus } from "lucide-react";
 import { Html5QrcodeScanner } from "html5-qrcode";
-import { 
-  criarVenda, 
-  consultarClientes, 
+import {
+  criarVenda,
+  consultarClientes,
   consultarEstoque,
   gerarIdVenda,
   type VendaData,
@@ -43,7 +43,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
     "Data Venda": (new Date(Date.now() - new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0],
     "Nome Cliente": ""
   });
-  
+
   const [items, setItems] = useState<VendaItem[]>([]);
   const [currentItem, setCurrentItem] = useState({
     "SKU Produto": "",
@@ -51,7 +51,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
     "Quantidade Vendida": 1,
     "Preço Unitário": 0
   });
-  
+
   const [isLoading, setIsLoading] = useState(false);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -89,10 +89,10 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
         "Preço Unitário": item["Preço Unitário"] || 0,
         "Quantidade Atual": item["Quantidade Atual"] || 0
       }));
-      
+
       const produtosFiltrados = produtosFormatados.filter(p => p["SKU"].trim() !== "");
       const produtosOrdenados = sortBySKU(produtosFiltrados, "SKU");
-      
+
       setProdutos(produtosOrdenados);
     } catch (error) {
       console.error('Erro ao carregar produtos:', error);
@@ -138,15 +138,15 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
     if (itemExistentIndex !== -1) {
       const novaQuantidade = items[itemExistentIndex]["Quantidade Vendida"] + currentItem["Quantidade Vendida"];
       const produto = produtos.find(p => p["SKU"] === currentItem["SKU Produto"]);
-      
+
       if (produto && produto["Quantidade Atual"] < novaQuantidade) {
         toast.error("Estoque insuficiente", {
           description: `Disponível: ${produto["Quantidade Atual"]} unidades`
         });
         return;
       }
-      
-      setItems(prev => prev.map((item, i) => 
+
+      setItems(prev => prev.map((item, i) =>
         i === itemExistentIndex ? { ...item, "Quantidade Vendida": novaQuantidade } : item
       ));
       toast.success(`Quantidade atualizada para ${novaQuantidade}`);
@@ -154,7 +154,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
       setItems(prev => [...prev, { ...currentItem }]);
       toast.success("Item adicionado à venda");
     }
-    
+
     // Limpar item atual
     setCurrentItem({
       "SKU Produto": "",
@@ -177,7 +177,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
 
     const item = items[index];
     const produto = produtos.find(p => p["SKU"] === item["SKU Produto"]);
-    
+
     if (produto && produto["Quantidade Atual"] < novaQuantidade) {
       toast.error("Estoque insuficiente", {
         description: `Disponível: ${produto["Quantidade Atual"]} unidades`
@@ -185,7 +185,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
       return;
     }
 
-    setItems(prev => prev.map((item, i) => 
+    setItems(prev => prev.map((item, i) =>
       i === index ? { ...item, "Quantidade Vendida": novaQuantidade } : item
     ));
     setEditingItemIndex(null);
@@ -198,7 +198,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
       return;
     }
 
-    const produto = produtos.find(p => 
+    const produto = produtos.find(p =>
       p["SKU"].toLowerCase() === codigoBarras.toLowerCase() ||
       p["Nome Produto"].toLowerCase().includes(codigoBarras.toLowerCase())
     );
@@ -206,14 +206,14 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
     if (produto) {
       handleSelectProduto(produto["SKU"]);
       setCodigoBarras("");
-      
+
       // Auto-adicionar se tiver estoque
       if (produto["Quantidade Atual"] > 0) {
         const itemExistenteIndex = items.findIndex(item => item["SKU Produto"] === produto["SKU"]);
         if (itemExistenteIndex !== -1) {
           const novaQuantidade = items[itemExistenteIndex]["Quantidade Vendida"] + 1;
           if (produto["Quantidade Atual"] >= novaQuantidade) {
-            setItems(prev => prev.map((item, i) => 
+            setItems(prev => prev.map((item, i) =>
               i === itemExistenteIndex ? { ...item, "Quantidade Vendida": novaQuantidade } : item
             ));
             toast.success(`Quantidade atualizada para ${novaQuantidade}`);
@@ -242,16 +242,16 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
 
   const startScanning = () => {
     setIsScanning(true);
-    
+
     // Cleanup previous scanner
     if (scanner) {
       scanner.clear().catch(console.error);
     }
-    
+
     const html5QrcodeScanner = new Html5QrcodeScanner(
       "qr-reader",
-      { 
-        fps: 10, 
+      {
+        fps: 10,
         qrbox: { width: 250, height: 250 },
         aspectRatio: 1.0,
         supportedScanTypes: [0, 1] // QR Code and Code 128
@@ -265,10 +265,10 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
       (decodedText) => {
         setCodigoBarras(decodedText);
         stopScanning();
-        
+
         // Buscar automaticamente após scan
         setTimeout(() => {
-          const produto = produtos.find(p => 
+          const produto = produtos.find(p =>
             p["SKU"].toLowerCase() === decodedText.toLowerCase() ||
             p["Nome Produto"].toLowerCase().includes(decodedText.toLowerCase())
           );
@@ -276,13 +276,13 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
           if (produto) {
             setCodigoBarras(decodedText);
             toast.success(`Produto escaneado: ${produto["Nome Produto"]}`);
-            
+
             if (produto["Quantidade Atual"] > 0) {
               const itemExistenteIndex = items.findIndex(item => item["SKU Produto"] === produto["SKU"]);
               if (itemExistenteIndex !== -1) {
                 const novaQuantidade = items[itemExistenteIndex]["Quantidade Vendida"] + 1;
                 if (produto["Quantidade Atual"] >= novaQuantidade) {
-                  setItems(prev => prev.map((item, i) => 
+                  setItems(prev => prev.map((item, i) =>
                     i === itemExistenteIndex ? { ...item, "Quantidade Vendida": novaQuantidade } : item
                   ));
                   toast.success(`Quantidade atualizada para ${novaQuantidade}`);
@@ -323,7 +323,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
   };
 
   const calcularTotal = () => {
-    return items.reduce((total, item) => 
+    return items.reduce((total, item) =>
       total + (item["Quantidade Vendida"] * item["Preço Unitário"]), 0
     );
   };
@@ -355,7 +355,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
 
       if (success) {
         toast.success("Venda registrada com sucesso!");
-        
+
         // Limpar formulário
         setFormData({
           "Data Venda": (new Date(Date.now() - new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0],
@@ -421,11 +421,11 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
           {/* Adicionar itens */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Adicionar Produtos</h3>
-            
+
             {/* Seção Bipagem / Código de Barras */}
             <Card className="p-4">
               <h4 className="font-medium mb-3">Bipagem / Código de Barras</h4>
-              
+
               <div className="flex gap-2 mb-3">
                 <div className="flex-1">
                   <Input
@@ -442,9 +442,9 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
                 <Button type="button" onClick={buscarPorCodigo}>
                   Buscar
                 </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={isScanning ? stopScanning : startScanning}
                 >
                   <Scan className="w-4 h-4 mr-2" />
@@ -459,11 +459,11 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
                 </div>
               )}
             </Card>
-            
+
             {/* Seleção Manual de Produto */}
             <Card className="p-4">
               <h4 className="font-medium mb-3">Ou Selecione Manualmente</h4>
-              
+
               <div className="grid grid-cols-3 gap-2">
                 <div className="space-y-2">
                   <Label htmlFor="produto">SKU *</Label>
@@ -517,9 +517,9 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
                     type="number"
                     min="1"
                     value={currentItem["Quantidade Vendida"]}
-                    onChange={(e) => setCurrentItem(prev => ({ 
-                      ...prev, 
-                      "Quantidade Vendida": parseInt(e.target.value) || 1 
+                    onChange={(e) => setCurrentItem(prev => ({
+                      ...prev,
+                      "Quantidade Vendida": parseInt(e.target.value) || 1
                     }))}
                   />
                 </div>
@@ -539,7 +539,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
           {items.length > 0 && (
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Itens da Venda</h3>
-              
+
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -567,7 +567,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
                           >
                             <Minus className="w-3 h-3" />
                           </Button>
-                          
+
                           {editingItemIndex === index ? (
                             <Input
                               type="number"
@@ -575,7 +575,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
                               value={item["Quantidade Vendida"]}
                               onChange={(e) => {
                                 const novaQuantidade = parseInt(e.target.value) || 1;
-                                setItems(prev => prev.map((it, i) => 
+                                setItems(prev => prev.map((it, i) =>
                                   i === index ? { ...it, "Quantidade Vendida": novaQuantidade } : it
                                 ));
                               }}
@@ -589,14 +589,14 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
                               autoFocus
                             />
                           ) : (
-                            <span 
+                            <span
                               className="min-w-[2rem] text-center cursor-pointer hover:bg-muted rounded px-2 py-1"
                               onClick={() => setEditingItemIndex(index)}
                             >
                               {item["Quantidade Vendida"]}
                             </span>
                           )}
-                          
+
                           <Button
                             type="button"
                             variant="outline"
@@ -605,7 +605,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
                           >
                             <PlusIcon className="w-3 h-3" />
                           </Button>
-                          
+
                           <Button
                             type="button"
                             variant="ghost"

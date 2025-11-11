@@ -41,7 +41,7 @@ const ReceitaProdutoForm = ({ onSuccess }: ReceitaProdutoFormProps) => {
         consultarDados('Estoque'),
         consultarDados('Estoque_MateriaPrima')
       ]);
-      
+
       setProdutos(dadosProdutos || []);
       setMateriasPrimas(dadosMateriaPrima || []);
     } catch (error) {
@@ -74,7 +74,7 @@ const ReceitaProdutoForm = ({ onSuccess }: ReceitaProdutoFormProps) => {
       };
 
       const sucesso = await salvarReceitaProduto(receitaData);
-      
+
       if (sucesso) {
         toast.success("Receita de produto cadastrada com sucesso!");
         // Reset form
