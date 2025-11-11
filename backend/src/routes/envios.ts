@@ -5,14 +5,18 @@ import path from 'path';
 import fs from 'fs';
 import XLSX from 'xlsx';
 import { logActivity } from '../services/activityLogger';
+import { optionalAuth, AuthRequest } from '../middleware/authMiddleware';
 
-interface MulterRequest extends Request {
+interface MulterRequest extends AuthRequest {
     file?: Express.Multer.File;
 }
 
 const upload = multer({ dest: 'uploads/' });
 
 export const enviosRouter = Router();
+
+// Aplicar middleware de autenticação opcional em todas as rotas
+enviosRouter.use(optionalAuth);
 
 // � Armazenar progresso de uploads em memória
 const uploadProgress = new Map<string, {
@@ -916,8 +920,8 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 const clientName = clientNameResult.rows[0]?.nome || `ID ${clientIdNum}`;
 
                 await logActivity({
-                    user_email: req.body.user_email || 'sistema',
-                    user_name: req.body.user_name || 'Sistema',
+                    user_email: (req as AuthRequest).user?.email || 'sistema',
+                    user_name: (req as AuthRequest).user?.nome || 'Sistema',
                     action: 'upload_full',
                     entity_type: 'envio',
                     entity_id: envioId.toString(),
@@ -1526,8 +1530,8 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             // Registrar log de atividade
             try {
                 await logActivity({
-                    user_email: req.body.user_email || 'sistema',
-                    user_name: req.body.user_name || 'Sistema',
+                    user_email: (req as AuthRequest).user?.email || 'sistema',
+                    user_name: (req as AuthRequest).user?.nome || 'Sistema',
                     action: 'upload_ml',
                     entity_type: 'import_batch',
                     entity_id: batchId,
@@ -2071,8 +2075,8 @@ enviosRouter.post('/relacionar', async (req: Request, res: Response) => {
             // Registrar log de atividade
             try {
                 await logActivity({
-                    user_email: req.body.user_email || 'sistema',
-                    user_name: req.body.user_name || 'Sistema',
+                    user_email: (req as AuthRequest).user?.email || 'sistema',
+                    user_name: (req as AuthRequest).user?.nome || 'Sistema',
                     action: 'auto_relate',
                     entity_type: source === 'FULL' ? 'envio' : 'pedidos',
                     entity_id: source === 'FULL' ? envio_id : (client_id || 'all'),
@@ -2220,8 +2224,8 @@ enviosRouter.post('/relacionar-manual', async (req: Request, res: Response) => {
         // Registrar log de atividade
         try {
             await logActivity({
-                user_email: req.body.user_email || 'sistema',
-                user_name: req.body.user_name || 'Sistema',
+                user_email: (req as AuthRequest).user?.email || 'sistema',
+                user_name: (req as AuthRequest).user?.nome || 'Sistema',
                 action: 'relate_manual',
                 entity_type: 'full_envio_raw',
                 entity_id: raw_id.toString(),
@@ -2442,8 +2446,8 @@ enviosRouter.post('/match-line', async (req: Request, res: Response) => {
         // Registrar log de atividade
         try {
             await logActivity({
-                user_email: req.body.user_email || 'sistema',
-                user_name: req.body.user_name || 'Sistema',
+                user_email: (req as AuthRequest).user?.email || 'sistema',
+                user_name: (req as AuthRequest).user?.nome || 'Sistema',
                 action: 'relate_item',
                 entity_type: 'full_raw',
                 entity_id: raw_id.toString(),
@@ -2727,8 +2731,8 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
             // Registrar log de atividade
             try {
                 await logActivity({
-                    user_email: req.body.user_email || 'sistema',
-                    user_name: req.body.user_name || 'Sistema',
+                    user_email: (req as AuthRequest).user?.email || 'sistema',
+                    user_name: (req as AuthRequest).user?.nome || 'Sistema',
                     action: 'emit_sales',
                     entity_type: 'envio',
                     entity_id: envio_id.toString(),
@@ -3066,8 +3070,8 @@ enviosRouter.post('/emitir-vendas', async (req: Request, res: Response) => {
                 }
 
                 await logActivity({
-                    user_email: req.body.user_email || 'sistema',
-                    user_name: req.body.user_name || 'Sistema',
+                    user_email: (req as AuthRequest).user?.email || 'sistema',
+                    user_name: (req as AuthRequest).user?.nome || 'Sistema',
                     action: 'emit_sales_ml',
                     entity_type: 'pedidos',
                     entity_id: finalImportId,

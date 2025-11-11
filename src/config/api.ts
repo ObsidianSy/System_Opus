@@ -20,6 +20,7 @@ export const getApiUrl = (endpoint: string): string => {
 
 /**
  * Helper para fazer requisições à API com tratamento de erros
+ * Adiciona automaticamente o token de autenticação
  */
 export async function apiRequest<T>(
     endpoint: string,
@@ -27,10 +28,14 @@ export async function apiRequest<T>(
 ): Promise<T> {
     const url = getApiUrl(`/api${endpoint}`);
 
+    // Pegar token do localStorage
+    const token = localStorage.getItem('token');
+
     const response = await fetch(url, {
         ...options,
         headers: {
             'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
             ...options?.headers,
         },
     });
@@ -41,4 +46,15 @@ export async function apiRequest<T>(
     }
 
     return response.json();
+}
+
+/**
+ * Helper para fazer requisições fetch com token automático
+ * Útil quando você precisa fazer fetch direto com mais controle
+ */
+export function getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem('token');
+    return {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
 }

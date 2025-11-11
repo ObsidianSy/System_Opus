@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react"
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from "@tanstack/react-query"
 import Layout from "@/components/Layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -144,6 +146,14 @@ const formatDetails = (details: Record<string, any>) => {
 }
 
 export default function ActivityLogs() {
+    const { isAdmin } = useAuth();
+    const navigate = useNavigate();
+    useEffect(() => {
+        if (!isAdmin()) {
+            navigate('/');
+        }
+    }, [isAdmin, navigate]);
+
     const [filters, setFilters] = useState({
         action: "all",
         user_email: "",
