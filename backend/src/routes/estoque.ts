@@ -1,7 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../database/db';
+import { optionalAuth, AuthRequest } from '../middleware/authMiddleware';
+import { logActivity } from '../services/activityLogger';
 
 export const estoqueRouter = Router();
+
+// Aplicar middleware de autenticação opcional em todas as rotas
+estoqueRouter.use(optionalAuth);
 
 // GET - Listar todos os produtos
 estoqueRouter.get('/', async (req: Request, res: Response) => {
@@ -290,6 +295,25 @@ estoqueRouter.post('/entrada', async (req: Request, res: Response) => {
         await client.query('COMMIT');
 
         const saldoAtual = updateResult.rows[0].quantidade_atual;
+
+        // Registrar atividade
+        await logActivity({
+            user_email: (req as AuthRequest).user?.email || 'sistema',
+            user_name: (req as AuthRequest).user?.nome || 'Sistema',
+            action: 'entrada_produto',
+            entity_type: 'produto',
+            entity_id: sku,
+            details: {
+                sku,
+                nome_produto: produto.nome,
+                quantidade_adicionada: quantidade,
+                saldo_anterior: parseFloat(produto.quantidade_atual),
+                saldo_atual: parseFloat(saldoAtual),
+                origem_tabela: origem_tabela || 'manual',
+                origem_id,
+                observacao
+            }
+        });
 
         res.json({
             success: true,

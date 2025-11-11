@@ -1,8 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../database/db';
 import { buildIdempotencyKey } from '../utils/normalizers';
+import { optionalAuth } from '../middleware/authMiddleware';
 
 export const pagamentosRouter = Router();
+
+// Aplicar middleware de autenticação opcional em todas as rotas
+pagamentosRouter.use(optionalAuth);
 
 // GET - Listar todos os pagamentos
 pagamentosRouter.get('/', async (req: Request, res: Response) => {

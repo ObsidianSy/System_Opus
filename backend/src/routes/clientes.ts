@@ -1,7 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../database/db';
+import { optionalAuth } from '../middleware/authMiddleware';
 
 export const clientesRouter = Router();
+
+// Aplicar middleware de autenticação opcional em todas as rotas
+clientesRouter.use(optionalAuth);
 
 // GET - Listar todos os clientes
 clientesRouter.get('/', async (req: Request, res: Response) => {

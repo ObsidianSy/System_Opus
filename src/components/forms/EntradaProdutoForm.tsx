@@ -96,12 +96,14 @@ export default function EntradaProdutoForm({ onSuccess }: EntradaProdutoFormProp
 
       console.log("📤 Enviando entrada de produto:", payload);
 
+      const token = localStorage.getItem('token');
       const response = await fetch(
         getApiUrl("/api/estoque/entrada"),
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
           },
           body: JSON.stringify(payload),
         }

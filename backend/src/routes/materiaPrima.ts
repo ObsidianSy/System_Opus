@@ -1,7 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../database/db';
+import { optionalAuth } from '../middleware/authMiddleware';
 
 export const materiaPrimaRouter = Router();
+
+// Aplicar middleware de autenticação opcional em todas as rotas
+materiaPrimaRouter.use(optionalAuth);
 
 // GET - Listar todas as matérias-primas
 materiaPrimaRouter.get('/', async (req: Request, res: Response) => {
