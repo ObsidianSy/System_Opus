@@ -41,7 +41,10 @@ interface Produto {
 const VendaForm = ({ onSuccess }: VendaFormProps) => {
   const [formData, setFormData] = useState({
     "Data Venda": (new Date(Date.now() - new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0],
-    "Nome Cliente": ""
+    "Nome Cliente": "",
+    "Canal": "",
+    "Pedido UID": "",
+    "client_id": "" // ID do cliente interno
   });
 
   const [items, setItems] = useState<VendaItem[]>([]);
@@ -99,12 +102,14 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
     }
   };
 
-  const handleSelectCliente = (clienteNome: string) => {
-    setFormData(prev => ({
-      ...prev,
-      "Nome Cliente": clienteNome
-    }));
-  };
+const handleSelectCliente = (clienteId: string) => {
+  const cliente = clientes.find(c => c["ID Cliente"] === clienteId);
+  setFormData(prev => ({
+    ...prev,
+    "Nome Cliente": cliente ? cliente["Cliente"] : "",
+    "client_id": clienteId // Adiciona o ID do cliente ao estado
+  }));
+};
 
   const handleSelectProduto = (sku: string) => {
     const produto = produtos.find(p => p["SKU"] === sku);
@@ -334,7 +339,7 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
 
     try {
       // Validação
-      if (!formData["Nome Cliente"]) {
+      if (!formData["Nome Cliente"] || !formData["client_id"]) {
         toast.error("Selecione um cliente");
         return;
       }
@@ -348,8 +353,15 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
         "ID Venda": gerarIdVenda(),
         "Data Venda": formData["Data Venda"],
         "Nome Cliente": formData["Nome Cliente"],
-        "items": items
+        "Canal": formData["Canal"] || "",
+        "Pedido UID": formData["Pedido UID"] || "",
+        "items": items,
+        "client_id": formData["client_id"] // Inclui o client_id capturado do formulário
       };
+
+      // Log para debug (remover depois)
+      console.log('🔍 DADOS DO FORMULÁRIO:', formData);
+      console.log('📦 VENDA DATA MONTADO:', vendaData);
 
       const success = await criarVenda(vendaData);
 
@@ -359,7 +371,10 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
         // Limpar formulário
         setFormData({
           "Data Venda": (new Date(Date.now() - new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0],
-          "Nome Cliente": ""
+          "Nome Cliente": "",
+          "Canal": "",
+          "Pedido UID": "",
+          "client_id": ""
         });
         setItems([]);
         setCurrentItem({
@@ -403,18 +418,38 @@ const VendaForm = ({ onSuccess }: VendaFormProps) => {
 
             <div className="space-y-2">
               <Label htmlFor="cliente">Cliente *</Label>
-              <Select value={formData["Nome Cliente"]} onValueChange={handleSelectCliente}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o cliente" />
-                </SelectTrigger>
-                <SelectContent>
-                  {clientes.map((cliente) => (
-                    <SelectItem key={cliente["ID Cliente"]} value={cliente["Cliente"]}>
-                      {cliente["Cliente"]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+           <Select value={formData["client_id"]} onValueChange={(clienteId) => handleSelectCliente(clienteId)}>
+  <SelectTrigger>
+    <SelectValue placeholder="Selecione o cliente" />
+  </SelectTrigger>
+  <SelectContent>
+    {clientes.map((cliente) => (
+      <SelectItem key={cliente["ID Cliente"]} value={cliente["ID Cliente"]}>
+        {cliente["Cliente"]}
+      </SelectItem>
+    ))}
+  </SelectContent>
+</Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="canal">Loja / Canal</Label>
+              <Input
+                id="canal"
+                placeholder="Ex: SHOPEE AETHER"
+                value={formData["Canal"]}
+                onChange={(e) => setFormData(prev => ({ ...prev, "Canal": e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pedido-uid">Número do Pedido</Label>
+              <Input
+                id="pedido-uid"
+                placeholder="Ex: ML-251113..."
+                value={formData["Pedido UID"]}
+                onChange={(e) => setFormData(prev => ({ ...prev, "Pedido UID": e.target.value }))}
+              />
             </div>
           </div>
 

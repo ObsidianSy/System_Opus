@@ -33,6 +33,7 @@ interface ProductListProps {
   showChannel?: boolean;
   showOrderId?: boolean;
   onItemClick?: (item: ProductListItem) => void;
+  renderActions?: (item: ProductListItem) => React.ReactNode;
 }
 
 export const ProductList: React.FC<ProductListProps> = ({
@@ -47,7 +48,8 @@ export const ProductList: React.FC<ProductListProps> = ({
   showDate = false,
   showChannel = false,
   showOrderId = false,
-  onItemClick
+  onItemClick,
+  renderActions
 }) => {
   if (!items || items.length === 0) {
     return (
@@ -177,6 +179,13 @@ export const ProductList: React.FC<ProductListProps> = ({
                 )}
               </div>
             </div>
+
+            {/* Botões de ação (se fornecidos) */}
+            {renderActions && (
+              <div className="ml-auto flex-shrink-0">
+                {renderActions(item)}
+              </div>
+            )}
           </div>
         );
       })}

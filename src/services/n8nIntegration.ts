@@ -13,7 +13,10 @@ export interface VendaData {
   "ID Venda": string;
   "Data Venda": string;
   "Nome Cliente": string;
+  "Canal"?: string; // Loja ou canal de venda
+  "Pedido UID"?: string; // Número do pedido
   "items": VendaItem[];
+  "client_id": string; // ID do cliente interno (obrigatório no backend)
 }
 
 export interface ClienteData {
@@ -85,7 +88,8 @@ export interface N8nRequest {
   sheetName: string;
   action: 'create' | 'upsert' | 'delete';
   data?: VendaData | ClienteData | ProdutoData | MateriaPrimaData | ReceitaProdutoData | ReceitaFinanceiraData | PagamentoData;
-  sku?: string; // Para operações de delete
+  sku?: string; // Para operações de delete em produtos/matéria-prima
+  id_venda?: string; // Para operações de delete em vendas
 }
 
 // URL base da API (usa configuração centralizada)
@@ -128,16 +132,28 @@ export const enviarDados = async (request: N8nRequest): Promise<boolean> => {
     } else if (request.action === 'delete' && request.sku) {
       url = `${baseUrl}/${endpoint}/${request.sku}`;
       method = 'DELETE';
+    } else if (request.action === 'delete' && request.id_venda) {
+      url = `${baseUrl}/${endpoint}/${request.id_venda}`;
+      method = 'DELETE';
     }
 
     const token = localStorage.getItem('token');
+    
+    // Mapear dados antes de enviar
+    const bodyData = method !== 'DELETE' ? mapDataToApi(request.data, request.sheetName) : undefined;
+    
+    // Log para debug (remover depois)
+    if (request.sheetName === 'Vendas') {
+      console.log('📤 PAYLOAD ENVIADO AO BACKEND:', JSON.stringify(bodyData, null, 2));
+    }
+    
     const response = await fetch(url, {
       method,
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       },
-      body: method !== 'DELETE' ? JSON.stringify(mapDataToApi(request.data, request.sheetName)) : undefined,
+      body: bodyData ? JSON.stringify(bodyData) : undefined,
     });
 
     if (!response.ok) {
@@ -219,8 +235,10 @@ const mapDataToApi = (data: any, sheetName: string): any => {
       return {
         id_venda: data['ID Venda'],
         data_venda: data['Data Venda'],
-        id_cliente: data['ID Cliente'],
+        client_id: data['client_id'], // ID do cliente interno (obrigatório)
         nome_cliente: data['Nome Cliente'],
+        canal: data['Canal'] || '', // Loja/Canal de venda
+        pedido_uid: data['Pedido UID'] || '', // Número do pedido
         items: data['items']?.map((item: any) => ({
           sku_produto: item['SKU Produto'],
           nome_produto: item['Nome Produto'],
@@ -392,7 +410,15 @@ export const criarVenda = async (venda: VendaData): Promise<boolean> => {
   return enviarDados({
     sheetName: "Vendas",
     action: "create",
-    data: venda
+    data: venda, // Envia todos os dados incluindo client_id
+  });
+};
+
+export const excluirVenda = async (idVenda: string): Promise<boolean> => {
+  return enviarDados({
+    sheetName: "Vendas",
+    action: "delete",
+    id_venda: idVenda
   });
 };
 

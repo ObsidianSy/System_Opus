@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Layout from "@/components/Layout";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { useApiDataWithFilters } from "@/hooks/useApiDataWithFilters";
@@ -7,12 +7,23 @@ import { useQuickFilters } from "@/hooks/useQuickFilters";
 import { ProductList } from "@/components/ProductList";
 import { notificationManager } from "@/components/NotificationManager";
 import DashboardCard from "@/components/DashboardCard";
-import { ShoppingCart, Plus, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
+import { ShoppingCart, Plus, TrendingUp, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import VendaForm from "@/components/forms/VendaForm";
 import { formatCurrency, formatQuantity, formatNumber, toNumber } from "@/utils/formatters";
 import { API_BASE_URL } from "@/config/api";
+import { excluirVenda } from "@/services/n8nIntegration";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 
 const parseDateLocal = (s?: string) => {
@@ -26,6 +37,7 @@ const parseDateLocal = (s?: string) => {
 };
 
 interface Venda {
+  "ID Venda": string;
   "Data Venda": string;
   "Nome Cliente": string;
   "SKU Produto": string;
@@ -41,6 +53,20 @@ interface Venda {
 const Vendas = () => {
   const { data: vendas, isLoading, refresh } = useApiDataWithFilters<Venda>('Vendas');
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [vendaToDelete, setVendaToDelete] = useState<Venda | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Log para debug - verificar estrutura dos dados
+  useEffect(() => {
+    if (vendas && vendas.length > 0) {
+      console.log('📦 Amostra de vendas da API:', vendas.slice(0, 2).map(v => ({
+        'ID Venda': v['ID Venda'],
+        'Nome Cliente': v['Nome Cliente'],
+        'SKU Produto': v['SKU Produto'],
+        todasChaves: Object.keys(v)
+      })));
+    }
+  }, [vendas]);
 
   // Estado de paginação
   const [currentPage, setCurrentPage] = useState(1);
@@ -135,6 +161,48 @@ const Vendas = () => {
       totalQuantidade
     };
   }, [filteredData]);
+
+  const handleDeleteVenda = async () => {
+    if (!vendaToDelete) return;
+
+    setIsDeleting(true);
+    
+    // Log para debug
+    console.log('🗑️ Tentando excluir venda:', {
+      id: vendaToDelete['ID Venda'],
+      cliente: vendaToDelete['Nome Cliente'],
+      produto: vendaToDelete['Nome Produto']
+    });
+    
+    try {
+      const success = await excluirVenda(vendaToDelete['ID Venda']);
+      
+      if (success) {
+        notificationManager.show(
+          `delete-${vendaToDelete['ID Venda']}`,
+          `Venda ${vendaToDelete['ID Venda']} foi excluída com sucesso`,
+          'success'
+        );
+        refresh();
+      } else {
+        notificationManager.show(
+          `delete-error-${vendaToDelete['ID Venda']}`,
+          'Não foi possível excluir a venda. Tente novamente.',
+          'error'
+        );
+      }
+    } catch (error) {
+      console.error('Erro ao excluir venda:', error);
+      notificationManager.show(
+        `delete-exception-${Date.now()}`,
+        'Ocorreu um erro ao tentar excluir a venda',
+        'error'
+      );
+    } finally {
+      setIsDeleting(false);
+      setVendaToDelete(null);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -278,6 +346,23 @@ const Vendas = () => {
             showDate={true}
             showChannel={true}
             showOrderId={true}
+            renderActions={(item) => {
+              const venda = paginatedData.find(v => v['SKU Produto'] === item.sku && v['Data Venda'] === item.dataVenda);
+              return venda ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setVendaToDelete(venda);
+                  }}
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  title="Excluir venda"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              ) : null;
+            }}
           />
         </div>
       </div>
@@ -296,6 +381,36 @@ const Vendas = () => {
           />
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Confirmação de Exclusão */}
+      <AlertDialog open={!!vendaToDelete} onOpenChange={(open) => !open && setVendaToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir esta venda?
+              <div className="mt-4 p-4 bg-muted/50 rounded-lg space-y-2">
+                <p><strong>ID:</strong> {vendaToDelete?.['ID Venda']}</p>
+                <p><strong>Cliente:</strong> {vendaToDelete?.['Nome Cliente']}</p>
+                <p><strong>Produto:</strong> {vendaToDelete?.['Nome Produto']}</p>
+                <p><strong>Valor:</strong> {formatCurrency(vendaToDelete?.['Valor Total'] || 0)}</p>
+                <p><strong>Data:</strong> {vendaToDelete?.['Data Venda']}</p>
+              </div>
+              <p className="mt-4 text-destructive font-semibold">Esta ação não pode ser desfeita!</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteVenda}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? 'Excluindo...' : 'Excluir Venda'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
 };
