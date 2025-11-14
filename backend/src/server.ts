@@ -27,6 +27,8 @@ const PORT = parseInt(process.env.PORT || '3001');
 // Configuração de CORS
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
     'http://localhost:5173',
+    'http://localhost:8080',
+    'http://localhost:3000',
     'https://docker-opus-unified.q4xusi.easypanel.host'
 ];
 

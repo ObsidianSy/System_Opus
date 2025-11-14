@@ -28,7 +28,7 @@ export const useQuickFilters = <T = any>(
   options: UseQuickFiltersOptions = {}
 ) => {
   const { persistKey, debounceMs = 300, defaultFilters = {} } = options;
-  const { getQueryParams, resetToAll } = useDateFilter();
+  const { getQueryParams, resetToAll, preset } = useDateFilter();
 
   // Estado dos filtros
   const [filters, setFilters] = useState<FilterState>({
@@ -144,8 +144,11 @@ export const useQuickFilters = <T = any>(
     if (filters.selectedStatuses && filters.selectedStatuses.length > 0) count++;
     if (filters.selectedCanais && filters.selectedCanais.length > 0) count++;
     
+    // Conta filtro de data se não for 'allTime' (todos os dados)
+    if (preset && preset !== 'allTime') count++;
+    
     return count;
-  }, [filters]);
+  }, [filters, preset]);
 
   // Opções disponíveis para dropdowns (extraídas dos dados)
   const availableOptions = useMemo(() => {
