@@ -180,11 +180,12 @@ const Relatorios = () => {
   // Selecionar dados baseado no período escolhido
   const dadosGraficoVendas = periodoGrafico === 'mensal' ? vendasPorMes : vendasPorDia;
 
-  // Relatório de vendas por SKU (totalizado por data)
+  // Relatório de vendas por SKU (totalizado por data) - APLICANDO FILTROS
   const vendasPorSKU = useMemo(() => {
     const vendidosPorSKU = new Map();
 
-    (vendas.data || []).forEach(venda => {
+    // Usando dadosFiltrados.vendasFiltradas ao invés de vendas.data
+    dadosFiltrados.vendasFiltradas.forEach(venda => {
       const sku = venda["SKU Produto"];
       const nome = venda["Nome Produto"];
       const quantidade = toNumber(venda["Quantidade Vendida"]);
@@ -209,7 +210,14 @@ const Relatorios = () => {
     });
 
     return Array.from(vendidosPorSKU.values()).sort((a, b) => b.valorTotal - a.valorTotal);
-  }, [vendas.data]);
+  }, [dadosFiltrados.vendasFiltradas]);
+
+  // Total do faturamento FILTRADO (para cálculo de percentual na tabela)
+  const faturamentoFiltrado = useMemo(() => {
+    return dadosFiltrados.vendasFiltradas.reduce((acc, venda) => 
+      acc + toNumber(venda["Valor Total"]), 0
+    );
+  }, [dadosFiltrados.vendasFiltradas]);
 
   // Processar dados auxiliares para gráficos com dados filtrados
   const dadosGraficos = useMemo(() => {
@@ -833,16 +841,16 @@ const Relatorios = () => {
                     />
                   </div>
 
-                  <div className="flex items-end col-span-full">
+                  <div className="flex items-end justify-end col-span-full">
                     <Button
                       variant="outline"
+                      size="sm"
                       onClick={() => {
                         setClienteFilter([]);
                         setSkuFilter([]);
                         setCategoryFilter([]);
                         setTipoFilter([]);
                       }}
-                      className="w-full"
                     >
                       Limpar Filtros
                     </Button>
@@ -950,6 +958,82 @@ const Relatorios = () => {
               </Card>
             </div>
 
+            {/* Filtros para a tabela de vendas por SKU */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Filter className="h-5 w-5" />
+                  Filtros da Tabela
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Cliente</label>
+                    <MultiSelectFilter
+                      label="Cliente"
+                      icon={Users}
+                      options={clientesUnicos}
+                      selectedValues={clienteFilter}
+                      onChange={setClienteFilter}
+                      placeholder="Todos os clientes"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">SKU</label>
+                    <MultiSelectFilter
+                      label="SKU"
+                      icon={Package}
+                      options={skusUnicos}
+                      selectedValues={skuFilter}
+                      onChange={setSkuFilter}
+                      placeholder="Todos os SKUs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Tipo de Produto</label>
+                    <MultiSelectFilter
+                      label="Tipo"
+                      icon={Package}
+                      options={tiposProduto}
+                      selectedValues={tipoFilter}
+                      onChange={setTipoFilter}
+                      placeholder="Todos os tipos"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Categoria</label>
+                    <MultiSelectFilter
+                      label="Categoria"
+                      icon={Tag}
+                      options={categorias}
+                      selectedValues={categoryFilter}
+                      onChange={setCategoryFilter}
+                      placeholder="Todas categorias"
+                    />
+                  </div>
+
+                  <div className="flex items-end justify-end col-span-full">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setClienteFilter([]);
+                        setSkuFilter([]);
+                        setCategoryFilter([]);
+                        setTipoFilter([]);
+                      }}
+                    >
+                      Limpar Filtros
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Tabela de vendas por SKU */}
             <Card>
               <CardHeader>
@@ -982,8 +1066,9 @@ const Relatorios = () => {
                         {vendasPorSKU
                           .slice((currentPage - 1) * pageSize, currentPage * pageSize)
                           .map((item, index) => {
-                            const percentual = estatisticas.faturamentoTotal > 0
-                              ? (item.valorTotal / estatisticas.faturamentoTotal * 100)
+                            // Usar faturamentoFiltrado ao invés de estatisticas.faturamentoTotal
+                            const percentual = faturamentoFiltrado > 0
+                              ? (item.valorTotal / faturamentoFiltrado * 100)
                               : 0;
 
                             return (

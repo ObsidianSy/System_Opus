@@ -93,10 +93,10 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
           </div>
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[280px] p-0 glass-card" align="start">
-        <div className="flex flex-col">
+      <PopoverContent className="w-[280px] p-0 glass-card" align="start" side="bottom">
+        <div className="flex flex-col max-h-[450px]">
           {/* Cabeçalho com busca */}
-          <div className="p-3 border-b border-border/50">
+          <div className="p-3 border-b border-border/50 flex-shrink-0">
             <Input
               placeholder={`Buscar ${label.toLowerCase()}...`}
               value={searchTerm}
@@ -106,7 +106,7 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
           </div>
 
           {/* Ações rápidas */}
-          <div className="flex items-center justify-between p-2 border-b border-border/50 bg-muted/30">
+          <div className="flex items-center justify-between p-2 border-b border-border/50 bg-muted/30 flex-shrink-0">
             <Button
               variant="ghost"
               size="sm"
@@ -134,8 +134,8 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
             )}
           </div>
 
-          {/* Lista de opções */}
-          <ScrollArea className="max-h-[300px]">
+          {/* Lista de opções - com scroll */}
+          <div className="overflow-y-auto flex-1 min-h-0">
             <div className="p-2">
               {filteredOptions.length === 0 ? (
                 <div className="text-center py-6 text-sm text-muted-foreground">
@@ -167,11 +167,11 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
                 </div>
               )}
             </div>
-          </ScrollArea>
+          </div>
 
           {/* Footer com contador */}
           {selectedValues.length > 0 && (
-            <div className="p-2 border-t border-border/50 bg-muted/30">
+            <div className="p-2 border-t border-border/50 bg-muted/30 flex-shrink-0">
               <p className="text-xs text-muted-foreground text-center">
                 {selectedValues.length} de {options.length} selecionados
               </p>
