@@ -28,7 +28,7 @@ export const useQuickFilters = <T = any>(
   options: UseQuickFiltersOptions = {}
 ) => {
   const { persistKey, debounceMs = 300, defaultFilters = {} } = options;
-  const { getQueryParams } = useDateFilter();
+  const { getQueryParams, resetToAll } = useDateFilter();
 
   // Estado dos filtros
   const [filters, setFilters] = useState<FilterState>({
@@ -89,6 +89,7 @@ export const useQuickFilters = <T = any>(
 
   // Limpar todos os filtros
   const clearFilters = useCallback(() => {
+    // Limpa os filtros de seleção
     const clearedFilters = {
       searchTerm: '',
       selectedClients: [],
@@ -103,7 +104,10 @@ export const useQuickFilters = <T = any>(
     };
     setFilters(clearedFilters);
     saveFilters(clearedFilters);
-  }, [defaultFilters, saveFilters]);
+    
+    // Limpa também o filtro de data para mostrar todos os dados históricos
+    resetToAll();
+  }, [defaultFilters, saveFilters, resetToAll]);
 
   // Filtrar dados
   const filteredData = useMemo(() => {
@@ -129,9 +133,18 @@ export const useQuickFilters = <T = any>(
 
   // Contadores para chips
   const activeFiltersCount = useMemo(() => {
-    return Object.values(filters).filter(value =>
-      value !== '' && value !== null && value !== undefined
-    ).length;
+    let count = 0;
+    
+    // Conta searchTerm se não estiver vazio
+    if (filters.searchTerm && filters.searchTerm.trim() !== '') count++;
+    
+    // Conta arrays se tiverem elementos
+    if (filters.selectedClients && filters.selectedClients.length > 0) count++;
+    if (filters.selectedSKUs && filters.selectedSKUs.length > 0) count++;
+    if (filters.selectedStatuses && filters.selectedStatuses.length > 0) count++;
+    if (filters.selectedCanais && filters.selectedCanais.length > 0) count++;
+    
+    return count;
   }, [filters]);
 
   // Opções disponíveis para dropdowns (extraídas dos dados)

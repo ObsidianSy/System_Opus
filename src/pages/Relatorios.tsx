@@ -27,6 +27,7 @@ const Relatorios = () => {
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [clienteFilter, setClienteFilter] = useState<string[]>([]);
   const [tipoFilter, setTipoFilter] = useState<string[]>([]);
+  const [skuFilter, setSkuFilter] = useState<string[]>([]);
   const [periodoGrafico, setPeriodoGrafico] = useState<'mensal' | 'diario'>('mensal');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
@@ -41,6 +42,7 @@ const Relatorios = () => {
       const quantidade = toNumber(item["Quantidade Atual"]);
       const categoria = item["Categoria"];
       const tipoProduto = (item as any)["Tipo Produto"] || (item as any).tipo_produto;
+      const sku = item["SKU"];
 
       const matchesQuantity = quantityFilter === "todos" ? true :
         quantityFilter === "sem-estoque" ? quantidade === 0 :
@@ -49,16 +51,18 @@ const Relatorios = () => {
 
       const matchesCategory = categoryFilter.length === 0 || categoryFilter.includes(categoria);
       const matchesTipo = tipoFilter.length === 0 || tipoFilter.includes(tipoProduto);
+      const matchesSKU = skuFilter.length === 0 || skuFilter.includes(sku);
 
-      return matchesQuantity && matchesCategory && matchesTipo;
+      return matchesQuantity && matchesCategory && matchesTipo && matchesSKU;
     });
 
-    // Filtrar vendas por cliente, tipo de produto e categoria
+    // Filtrar vendas por cliente, tipo de produto, categoria e SKU
     const vendasFiltradas = (vendas.data || []).filter(venda => {
       const cliente = venda["Nome Cliente"];
       const sku = venda["SKU Produto"];
 
       const matchesCliente = clienteFilter.length === 0 || clienteFilter.includes(cliente);
+      const matchesSKU = skuFilter.length === 0 || skuFilter.includes(sku);
 
       // Buscar o produto para obter tipo e categoria
       const produto = (produtos.data || []).find(p => p["SKU"] === sku);
@@ -68,14 +72,44 @@ const Relatorios = () => {
       const matchesTipo = tipoFilter.length === 0 || tipoFilter.includes(tipoProduto);
       const matchesCategory = categoryFilter.length === 0 || categoryFilter.includes(categoriaProduto);
 
-      return matchesCliente && matchesTipo && matchesCategory;
+      return matchesCliente && matchesTipo && matchesCategory && matchesSKU;
     });
 
     return { produtosFiltrados, vendasFiltradas };
-  }, [produtos.data, vendas.data, quantityFilter, categoryFilter, clienteFilter, tipoFilter]);
+  }, [produtos.data, vendas.data, quantityFilter, categoryFilter, clienteFilter, tipoFilter, skuFilter]);
 
   // Processar dados reais de vendas por mês com filtros aplicados
   const vendasPorMes = useMemo(() => {
+    // Se não houver filtro de data, usar últimos 12 meses
+    if (!dateRange) {
+      const now = new Date();
+      const mapa = new Map<string, { key: string; name: string; valor: number; qtd: number }>();
+      
+      // Últimos 12 meses
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const label = d.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+        mapa.set(key, { key, name: label, valor: 0, qtd: 0 });
+      }
+
+      // Agregar vendas filtradas por mês
+      dadosFiltrados.vendasFiltradas.forEach(venda => {
+        const dataVenda = venda["Data Venda"];
+        if (!dataVenda) return;
+
+        const d = new Date(dataVenda);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const atual = mapa.get(key);
+        if (atual) {
+          atual.valor += toNumber(venda["Valor Total"]);
+          atual.qtd += toNumber(venda["Quantidade Vendida"]);
+        }
+      });
+
+      return Array.from(mapa.values()).sort((a, b) => a.key.localeCompare(b.key));
+    }
+
     // Mapa base preenchendo todos os meses do período selecionado
     const mapa = new Map<string, { key: string; name: string; valor: number; qtd: number }>();
 
@@ -107,10 +141,12 @@ const Relatorios = () => {
     });
 
     return Array.from(mapa.values()).sort((a, b) => a.key.localeCompare(b.key));
-  }, [dadosFiltrados.vendasFiltradas, dateRange.startDate, dateRange.endDate]);
+  }, [dadosFiltrados.vendasFiltradas, dateRange]);
 
   // Processar dados de vendas por dia
   const vendasPorDia = useMemo(() => {
+    if (!dateRange) return []; // Sem gráfico diário se não houver range específico
+    
     const mapa = new Map<string, { key: string; name: string; valor: number; qtd: number }>();
 
     const start = new Date(dateRange.startDate);
@@ -139,7 +175,7 @@ const Relatorios = () => {
     });
 
     return Array.from(mapa.values()).sort((a, b) => a.key.localeCompare(b.key));
-  }, [dadosFiltrados.vendasFiltradas, dateRange.startDate, dateRange.endDate]);
+  }, [dadosFiltrados.vendasFiltradas, dateRange]);
 
   // Selecionar dados baseado no período escolhido
   const dadosGraficoVendas = periodoGrafico === 'mensal' ? vendasPorMes : vendasPorDia;
@@ -302,10 +338,14 @@ const Relatorios = () => {
     (vendas.data || []).map(v => v["Nome Cliente"]).filter(Boolean)
   ));
 
+  const skusUnicos = Array.from(new Set(
+    (produtos.data || []).map(p => p["SKU"]).filter(Boolean)
+  ));
+
   // Reset página quando filtros mudam
   useMemo(() => {
     setCurrentPage(1);
-  }, [quantityFilter, categoryFilter, clienteFilter, tipoFilter]);
+  }, [quantityFilter, categoryFilter, clienteFilter, tipoFilter, skuFilter]);
 
 
 
@@ -319,7 +359,11 @@ const Relatorios = () => {
       "Valor Total": `R$ ${item.valorTotal.toFixed(2)}`
     }));
 
-    const nomeArquivo = `relatorio-vendas-sku-${dateRange.startDate.toISOString().split('T')[0]}-a-${dateRange.endDate.toISOString().split('T')[0]}.csv`;
+    const hoje = new Date().toISOString().split('T')[0];
+    const periodoTexto = dateRange 
+      ? `${dateRange.startDate.toISOString().split('T')[0]}-a-${dateRange.endDate.toISOString().split('T')[0]}`
+      : 'todos-os-dados';
+    const nomeArquivo = `relatorio-vendas-sku-${periodoTexto}.csv`;
 
     if (dados.length > 0) {
       const headers = Object.keys(dados[0]);
@@ -340,7 +384,9 @@ const Relatorios = () => {
   const exportarVendasPorSKUPDF = () => {
     const doc = new jsPDF();
     const hoje = new Date().toLocaleDateString('pt-BR');
-    const periodo = `${dateRange.startDate.toLocaleDateString('pt-BR')} a ${dateRange.endDate.toLocaleDateString('pt-BR')}`;
+    const periodo = dateRange
+      ? `${dateRange.startDate.toLocaleDateString('pt-BR')} a ${dateRange.endDate.toLocaleDateString('pt-BR')}`
+      : 'Todos os dados';
 
     doc.setFontSize(18);
     doc.text('Relatório de Vendas por SKU', 14, 22);
@@ -363,7 +409,10 @@ const Relatorios = () => {
       headStyles: { fillColor: [41, 128, 185] }
     });
 
-    doc.save(`relatorio-vendas-sku-${dateRange.startDate.toISOString().split('T')[0]}-a-${dateRange.endDate.toISOString().split('T')[0]}.pdf`);
+    const periodoTexto = dateRange
+      ? `${dateRange.startDate.toISOString().split('T')[0]}-a-${dateRange.endDate.toISOString().split('T')[0]}`
+      : 'todos-os-dados';
+    doc.save(`relatorio-vendas-sku-${periodoTexto}.pdf`);
   };
 
   // Função para exportar relatório em CSV
@@ -390,7 +439,10 @@ const Relatorios = () => {
         "Quantidade": toNumber(venda["Quantidade Vendida"]),
         "Valor Total": `R$ ${toNumber(venda["Valor Total"]).toFixed(2)}`
       }));
-      nomeArquivo = `relatorio-vendas-${dateRange.startDate.toISOString().split('T')[0]}-a-${dateRange.endDate.toISOString().split('T')[0]}.csv`;
+      const periodoTexto = dateRange
+        ? `${dateRange.startDate.toISOString().split('T')[0]}-a-${dateRange.endDate.toISOString().split('T')[0]}`
+        : 'todos-os-dados';
+      nomeArquivo = `relatorio-vendas-${periodoTexto}.csv`;
     }
 
     // Converter para CSV
@@ -464,7 +516,10 @@ const Relatorios = () => {
       doc.setFontSize(18);
       doc.text('Relatório de Vendas', 14, 22);
       doc.setFontSize(11);
-      doc.text(`Período: ${dateRange.startDate.toLocaleDateString('pt-BR')} a ${dateRange.endDate.toLocaleDateString('pt-BR')} | Data: ${hoje}`, 14, 30);
+      const periodo = dateRange
+        ? `${dateRange.startDate.toLocaleDateString('pt-BR')} a ${dateRange.endDate.toLocaleDateString('pt-BR')}`
+        : 'Todos os dados';
+      doc.text(`Período: ${periodo} | Data: ${hoje}`, 14, 30);
 
       const tableData = dadosFiltrados.vendasFiltradas.map(venda => [
         venda["ID Venda"],
@@ -483,7 +538,10 @@ const Relatorios = () => {
         headStyles: { fillColor: [41, 128, 185] }
       });
 
-      doc.save(`relatorio-vendas-${dateRange.startDate.toISOString().split('T')[0]}-a-${dateRange.endDate.toISOString().split('T')[0]}.pdf`);
+      const periodoTexto = dateRange
+        ? `${dateRange.startDate.toISOString().split('T')[0]}-a-${dateRange.endDate.toISOString().split('T')[0]}`
+        : 'todos-os-dados';
+      doc.save(`relatorio-vendas-${periodoTexto}.pdf`);
     }
   };
 
@@ -495,7 +553,10 @@ const Relatorios = () => {
           <div>
             <h1 className="text-3xl font-bold text-foreground">Relatórios & Analytics</h1>
             <p className="text-muted-foreground">
-              Período: {dateRange.startDate.toLocaleDateString('pt-BR')} até {dateRange.endDate.toLocaleDateString('pt-BR')}
+              Período: {dateRange 
+                ? `${dateRange.startDate.toLocaleDateString('pt-BR')} até ${dateRange.endDate.toLocaleDateString('pt-BR')}`
+                : 'Todos os dados históricos'
+              }
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -737,6 +798,18 @@ const Relatorios = () => {
                   </div>
 
                   <div>
+                    <label className="text-sm font-medium mb-2 block">SKU</label>
+                    <MultiSelectFilter
+                      label="SKU"
+                      icon={Package}
+                      options={skusUnicos}
+                      selectedValues={skuFilter}
+                      onChange={setSkuFilter}
+                      placeholder="Todos os SKUs"
+                    />
+                  </div>
+
+                  <div>
                     <label className="text-sm font-medium mb-2 block">Tipo de Produto</label>
                     <MultiSelectFilter
                       label="Tipo"
@@ -760,11 +833,12 @@ const Relatorios = () => {
                     />
                   </div>
 
-                  <div className="flex items-end">
+                  <div className="flex items-end col-span-full">
                     <Button
                       variant="outline"
                       onClick={() => {
                         setClienteFilter([]);
+                        setSkuFilter([]);
                         setCategoryFilter([]);
                         setTipoFilter([]);
                       }}
@@ -1011,6 +1085,18 @@ const Relatorios = () => {
                   </div>
 
                   <div>
+                    <label className="text-sm font-medium mb-2 block">SKU</label>
+                    <MultiSelectFilter
+                      label="SKU"
+                      icon={Package}
+                      options={skusUnicos}
+                      selectedValues={skuFilter}
+                      onChange={setSkuFilter}
+                      placeholder="Todos os SKUs"
+                    />
+                  </div>
+
+                  <div>
                     <label className="text-sm font-medium mb-2 block">Tipo de Produto</label>
                     <MultiSelectFilter
                       label="Tipo"
@@ -1034,7 +1120,19 @@ const Relatorios = () => {
                     />
                   </div>
 
-                  <div className="flex items-end gap-2">
+                  <div className="flex items-end gap-2 col-span-full">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setQuantityFilter("todos");
+                        setSkuFilter([]);
+                        setCategoryFilter([]);
+                        setTipoFilter([]);
+                      }}
+                      className="flex-1"
+                    >
+                      Limpar Filtros
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => exportarRelatorioCSV("produtos")}>
                       <Download className="mr-1 h-4 w-4" /> CSV
                     </Button>
@@ -1231,6 +1329,56 @@ const Relatorios = () => {
           </TabsContent>
 
           <TabsContent value="clientes" className="space-y-6">
+            {/* Filtros de clientes */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Filter className="h-5 w-5" />
+                  Filtros
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Cliente</label>
+                    <MultiSelectFilter
+                      label="Cliente"
+                      icon={Users}
+                      options={clientesUnicos}
+                      selectedValues={clienteFilter}
+                      onChange={setClienteFilter}
+                      placeholder="Todos os clientes"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">SKU</label>
+                    <MultiSelectFilter
+                      label="SKU"
+                      icon={Package}
+                      options={skusUnicos}
+                      selectedValues={skuFilter}
+                      onChange={setSkuFilter}
+                      placeholder="Todos os SKUs"
+                    />
+                  </div>
+
+                  <div className="flex items-end">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setClienteFilter([]);
+                        setSkuFilter([]);
+                      }}
+                      className="w-full"
+                    >
+                      Limpar Filtros
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Estatísticas de clientes */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">

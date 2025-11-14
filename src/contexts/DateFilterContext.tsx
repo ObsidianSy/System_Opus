@@ -8,16 +8,18 @@ interface DateRange {
 }
 
 export interface DateFilterState {
-  dateRange: DateRange;
+  dateRange: DateRange | null; // null = sem filtro (todos os dados históricos)
   preset: string;
   timezone: string;
   setDateRange: (range: DateRange) => void;
   setPreset: (preset: string) => void;
-  getQueryParams: () => { startDate: string; endDate: string };
+  resetToAll: () => void; // Nova função para mostrar todos os dados históricos
+  getQueryParams: () => { startDate: string; endDate: string } | null;
   formatDisplayRange: () => string;
 }
 
 export const DATE_PRESETS = {
+  allTime: 'Todos os dados',
   today: 'Hoje',
   last7days: 'Últimos 7 dias', 
   currentMonth: 'Mês atual',
@@ -27,8 +29,12 @@ export const DATE_PRESETS = {
 
 const TIMEZONE = 'America/Sao_Paulo';
 
-const getPresetRange = (preset: string): DateRange => {
+const getPresetRange = (preset: string): DateRange | null => {
   const now = toZonedTime(new Date(), TIMEZONE);
+  
+  if (preset === 'allTime') {
+    return null; // Sem filtro de data
+  }
   
   switch (preset) {
     case 'today':
@@ -64,7 +70,7 @@ const DateFilterContext = createContext<DateFilterState | undefined>(undefined);
 
 export const DateFilterProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [preset, setPresetState] = useState<string>('currentMonth');
-  const [dateRange, setDateRangeState] = useState<DateRange>(getPresetRange('currentMonth'));
+  const [dateRange, setDateRangeState] = useState<DateRange | null>(getPresetRange('currentMonth'));
 
   // Persistir no localStorage
   useEffect(() => {
@@ -73,10 +79,16 @@ export const DateFilterProvider: React.FC<{ children: ReactNode }> = ({ children
       try {
         const { preset: savedPreset, startDate, endDate } = JSON.parse(saved);
         setPresetState(savedPreset);
-        setDateRangeState({
-          startDate: new Date(startDate),
-          endDate: new Date(endDate)
-        });
+        
+        // Se for allTime, seta null
+        if (savedPreset === 'allTime') {
+          setDateRangeState(null);
+        } else {
+          setDateRangeState({
+            startDate: new Date(startDate),
+            endDate: new Date(endDate)
+          });
+        }
       } catch (error) {
         console.warn('Erro ao carregar filtro de data salvo:', error);
       }
@@ -97,19 +109,32 @@ export const DateFilterProvider: React.FC<{ children: ReactNode }> = ({ children
     setPresetState(newPreset);
     const range = getPresetRange(newPreset);
     setDateRangeState(range);
-    localStorage.setItem('obsidian-date-filter', JSON.stringify({
-      preset: newPreset,
-      startDate: range.startDate.toISOString(),
-      endDate: range.endDate.toISOString()
-    }));
+    
+    if (newPreset === 'allTime') {
+      // Não salva datas para allTime
+      localStorage.setItem('obsidian-date-filter', JSON.stringify({
+        preset: newPreset
+      }));
+    } else if (range) {
+      localStorage.setItem('obsidian-date-filter', JSON.stringify({
+        preset: newPreset,
+        startDate: range.startDate.toISOString(),
+        endDate: range.endDate.toISOString()
+      }));
+    }
   };
 
-  const getQueryParams = () => ({
-    startDate: format(dateRange.startDate, 'yyyy-MM-dd'),
-    endDate: format(dateRange.endDate, 'yyyy-MM-dd')
-  });
+  const getQueryParams = () => {
+    if (!dateRange) return null; // Sem filtro
+    return {
+      startDate: format(dateRange.startDate, 'yyyy-MM-dd'),
+      endDate: format(dateRange.endDate, 'yyyy-MM-dd')
+    };
+  };
 
   const formatDisplayRange = () => {
+    if (!dateRange) return 'Todos os dados históricos';
+    
     const { startDate, endDate } = dateRange;
     const start = format(startDate, 'dd/MM');
     const end = format(endDate, 'dd/MM/yyyy');
@@ -121,6 +146,15 @@ export const DateFilterProvider: React.FC<{ children: ReactNode }> = ({ children
     return `${start} - ${end}`;
   };
 
+  // Resetar filtro de data para mostrar TODOS os dados históricos (sem filtro)
+  const resetToAll = () => {
+    // Remove filtro do localStorage
+    localStorage.removeItem('obsidian-date-filter');
+    // Seta dateRange como null = sem filtro
+    setDateRangeState(null);
+    setPresetState('allTime');
+  };
+
   return (
     <DateFilterContext.Provider
       value={{
@@ -129,6 +163,7 @@ export const DateFilterProvider: React.FC<{ children: ReactNode }> = ({ children
         timezone: TIMEZONE,
         setDateRange,
         setPreset,
+        resetToAll,
         getQueryParams,
         formatDisplayRange
       }}

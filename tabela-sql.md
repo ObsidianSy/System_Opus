@@ -35,6 +35,7 @@ CREATE TABLE "public"."devolucoes" (
   "observacoes" TEXT NULL,
   "created_at" TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ,
   "updated_at" TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ,
+  "codigo_rastreio" VARCHAR(255) NULL,
   CONSTRAINT "devolucoes_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "devolucoes_pedido_uid_sku_produto_key" UNIQUE ("pedido_uid", "sku_produto")
 );
@@ -141,6 +142,17 @@ CREATE TABLE "obsidian"."pagamentos" (
   "criado_em" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now() ,
   "idempotency_key" TEXT NULL,
   CONSTRAINT "pagamentos_pkey" PRIMARY KEY ("id")
+);
+CREATE TABLE "obsidian"."produto_fotos" ( 
+  "id" SERIAL,
+  "produto_base" VARCHAR(255) NOT NULL,
+  "foto_url" TEXT NOT NULL,
+  "foto_filename" VARCHAR(255) NULL,
+  "foto_size" INTEGER NULL,
+  "created_at" TIMESTAMP NULL DEFAULT now() ,
+  "updated_at" TIMESTAMP NULL DEFAULT now() ,
+  CONSTRAINT "produto_fotos_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "ux_produto_fotos_base" UNIQUE ("produto_base")
 );
 CREATE TABLE "obsidian"."produtos" ( 
   "id" SERIAL,
@@ -294,16 +306,6 @@ CREATE TABLE "obsidian"."usuario_roles" (
   "role_id" INTEGER NOT NULL,
   CONSTRAINT "usuario_roles_pkey" PRIMARY KEY ("usuario_id", "role_id")
 );
-CREATE TABLE "obsidian"."usuarios" ( 
-  "id" UUID NOT NULL DEFAULT gen_random_uuid() ,
-  "nome" TEXT NOT NULL,
-  "email" TEXT NOT NULL,
-  "senha_hash" TEXT NOT NULL,
-  "ativo" BOOLEAN NULL DEFAULT true ,
-  "criado_em" TIMESTAMP NULL DEFAULT now() ,
-  CONSTRAINT "usuarios_pkey" PRIMARY KEY ("id", "id", "id", "id"),
-  CONSTRAINT "usuarios_email_key" UNIQUE ("email")
-);
 CREATE TABLE "public"."usuarios" ( 
   "id" SERIAL,
   "nome" VARCHAR(255) NOT NULL,
@@ -313,6 +315,18 @@ CREATE TABLE "public"."usuarios" (
   "created_at" TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ,
   "updated_at" TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ,
   CONSTRAINT "usuarios_pkey" PRIMARY KEY ("id", "id", "id", "id"),
+  CONSTRAINT "usuarios_email_key" UNIQUE ("email")
+);
+CREATE TABLE "obsidian"."usuarios" ( 
+  "id" UUID NOT NULL DEFAULT gen_random_uuid() ,
+  "nome" TEXT NOT NULL,
+  "email" TEXT NOT NULL,
+  "senha_hash" TEXT NOT NULL,
+  "ativo" BOOLEAN NULL DEFAULT true ,
+  "criado_em" TIMESTAMP NULL DEFAULT now() ,
+  "cargo" VARCHAR(20) NULL DEFAULT 'operador'::character varying ,
+  "created_at" TIMESTAMP NULL DEFAULT now() ,
+  CONSTRAINT "usuarios_pkey" PRIMARY KEY ("id", "id"),
   CONSTRAINT "usuarios_email_key" UNIQUE ("email")
 );
 CREATE TABLE "obsidian"."vendas" ( 
@@ -571,6 +585,31 @@ CREATE FUNCTION "public"."encrypt_iv"() RETURNS BYTEA LANGUAGE C
 AS
 $$
 pg_encrypt_iv
+$$;
+CREATE FUNCTION "obsidian"."extrair_produto_base"(IN sku TEXT) RETURNS TEXT LANGUAGE PLPGSQL
+AS
+$$
+
+DECLARE
+    sku_upper TEXT;
+    sku_clean TEXT;
+BEGIN
+    -- Converter para maiúsculas e remover espaços
+    sku_upper := UPPER(TRIM(sku));
+    
+    -- Remover tamanhos do final:
+    -- Números: ATR-AZL-37 → ATR-AZL, CH202-PRETO-40 → CH202-PRETO
+    -- Letras: H302-PTO-P → H302-PTO, CH202-PRETO-M → CH202-PRETO
+    -- Combinação: ATR-AZL-37P → ATR-AZL
+    sku_clean := REGEXP_REPLACE(sku_upper, '-?[0-9]*[PPMGXS]+$', '');
+    sku_clean := REGEXP_REPLACE(sku_clean, '-?\d+$', '');
+    
+    -- Remover traço final se sobrou
+    sku_clean := REGEXP_REPLACE(sku_clean, '-$', '');
+    
+    RETURN sku_clean;
+END;
+
 $$;
 CREATE FUNCTION "ui"."fn_full_relacionar_e_emitir"(IN p_full_raw_id BIGINT, IN p_stock_sku TEXT, IN p_alias_text TEXT, IN p_user TEXT, OUT ok BOOLEAN, OUT envio_id BIGINT) RETURNS RECORD LANGUAGE PLPGSQL
 AS
@@ -2687,6 +2726,21 @@ AS
     p.observacoes AS "Observações"
    FROM (obsidian.pagamentos p
      LEFT JOIN obsidian.clientes c ON ((c.id = p.cliente_id)));;
+CREATE VIEW "obsidian"."v_produtos_com_foto"
+AS
+ SELECT p.id,
+    p.sku,
+    p.nome,
+    p.quantidade_atual,
+    p.preco_unitario,
+    p.tipo_produto,
+    obsidian.extrair_produto_base(p.sku) AS produto_base,
+    f.foto_url,
+    f.foto_filename,
+    f.id AS foto_id
+   FROM (obsidian.produtos p
+     LEFT JOIN obsidian.produto_fotos f ON ((obsidian.extrair_produto_base(p.sku) = (f.produto_base)::text)))
+  ORDER BY p.sku;;
 CREATE VIEW "obsidian"."v_receita_produto"
 AS
  SELECT sku_produto AS "SKU Produto",

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CalendarIcon, ChevronDownIcon } from 'lucide-react';
+import { CalendarIcon, ChevronDownIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import {
@@ -14,6 +14,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useDateFilter, DATE_PRESETS } from '@/contexts/DateFilterContext';
 import { format } from 'date-fns';
@@ -22,6 +29,7 @@ export const DateFilterSelector: React.FC = () => {
   const { preset, dateRange, setPreset, setDateRange, formatDisplayRange } = useDateFilter();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [tempRange, setTempRange] = useState<{ from?: Date; to?: Date }>({});
+  const [calendarMonth, setCalendarMonth] = useState<Date>(dateRange?.startDate || new Date());
 
   const handlePresetSelect = (newPreset: string) => {
     setPreset(newPreset);
@@ -41,6 +49,44 @@ export const DateFilterSelector: React.FC = () => {
       setTempRange({});
     }
   };
+
+  const handleMonthChange = (increment: number) => {
+    const newMonth = new Date(calendarMonth);
+    newMonth.setMonth(newMonth.getMonth() + increment);
+    setCalendarMonth(newMonth);
+  };
+
+  const handleYearChange = (year: string) => {
+    const newMonth = new Date(calendarMonth);
+    newMonth.setFullYear(parseInt(year));
+    setCalendarMonth(newMonth);
+  };
+
+  const handleMonthSelect = (month: string) => {
+    const newMonth = new Date(calendarMonth);
+    newMonth.setMonth(parseInt(month));
+    setCalendarMonth(newMonth);
+  };
+
+  // Gerar anos (últimos 5 anos + próximos 2 anos)
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 8 }, (_, i) => currentYear - 5 + i);
+
+  // Meses em português
+  const months = [
+    { value: '0', label: 'Janeiro' },
+    { value: '1', label: 'Fevereiro' },
+    { value: '2', label: 'Março' },
+    { value: '3', label: 'Abril' },
+    { value: '4', label: 'Maio' },
+    { value: '5', label: 'Junho' },
+    { value: '6', label: 'Julho' },
+    { value: '7', label: 'Agosto' },
+    { value: '8', label: 'Setembro' },
+    { value: '9', label: 'Outubro' },
+    { value: '10', label: 'Novembro' },
+    { value: '11', label: 'Dezembro' },
+  ];
 
   return (
     <div className="flex items-center gap-2">
@@ -87,7 +133,7 @@ export const DateFilterSelector: React.FC = () => {
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
-          <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen} modal>
+          <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen} modal={false}>
             <PopoverTrigger asChild>
               <DropdownMenuItem 
                 onSelect={(e) => e.preventDefault()}
@@ -104,13 +150,68 @@ export const DateFilterSelector: React.FC = () => {
               onOpenAutoFocus={(e) => e.preventDefault()}
               onCloseAutoFocus={(e) => e.preventDefault()}
             >
+              {/* Seletores de Mês e Ano */}
+              <div className="flex items-center justify-between gap-2 p-3 border-b">
+                <Select
+                  value={calendarMonth.getMonth().toString()}
+                  onValueChange={handleMonthSelect}
+                >
+                  <SelectTrigger className="w-[130px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {months.map((month) => (
+                      <SelectItem key={month.value} value={month.value}>
+                        {month.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={calendarMonth.getFullYear().toString()}
+                  onValueChange={handleYearChange}
+                >
+                  <SelectTrigger className="w-[100px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {years.map((year) => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <div className="flex gap-1">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => handleMonthChange(-1)}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => handleMonthChange(1)}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
               <Calendar
                 initialFocus
                 mode="range"
-                defaultMonth={dateRange.startDate}
+                month={calendarMonth}
+                onMonthChange={setCalendarMonth}
                 selected={{
-                  from: tempRange.from || dateRange.startDate,
-                  to: tempRange.to || dateRange.endDate
+                  from: tempRange.from || dateRange?.startDate,
+                  to: tempRange.to || dateRange?.endDate
                 }}
                 onSelect={handleCustomDateSelect}
                 numberOfMonths={2}

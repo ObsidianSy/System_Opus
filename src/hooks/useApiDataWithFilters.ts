@@ -18,15 +18,21 @@ export const useApiDataWithFilters = <T = any>(
   const { getQueryParams, dateRange, timezone } = useDateFilter();
   const dateParams = getQueryParams();
 
-  // Usar react-query com cache baseado em data
-  const queryKey = [sheetName, dateParams.startDate, dateParams.endDate];
+  // Usar react-query com cache baseado em data (null = sem filtro)
+  const queryKey = [sheetName, dateParams?.startDate || 'all', dateParams?.endDate || 'all'];
   
   const { data, isLoading, error, refetch } = useQuery({
     queryKey,
     queryFn: async () => {
-      console.log(`Consultando ${sheetName} com filtros de data:`, { ...dateParams, timezone, range: dateRange });
+      console.log(`Consultando ${sheetName} com filtros de data:`, { dateParams, timezone, dateRange });
       const result = await consultarDados(sheetName);
       if (!Array.isArray(result)) return result || [];
+
+      // Se dateRange for null, retorna todos os dados sem filtrar
+      if (!dateRange) {
+        console.log(`📅 Sem filtro de data - retornando todos os ${result.length} registros`);
+        return result;
+      }
 
       // Limites inclusivos no fuso horário local (00:00:00.000 até 23:59:59.999)
       const startTs = new Date(
