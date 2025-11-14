@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import Layout from "@/components/Layout";
 import { ProductsDataTable } from "@/components/tables/ProductsDataTable";
 import { RawMaterialsDataTable } from "@/components/tables/RawMaterialsDataTable";
-import { Plus, Package, RefreshCw, Settings, ArrowUp, MoreHorizontal, TrendingUp, TrendingDown, AlertTriangle, Download, Upload, Camera } from "lucide-react";
+import { Plus, Package, RefreshCw, Settings, ArrowUp, MoreHorizontal, TrendingUp, TrendingDown, AlertTriangle, Download, Upload, Camera, Tag } from "lucide-react";
+import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { toast } from "sonner";
 import { consultarDados } from "@/services/n8nIntegration";
 import ProdutoForm from "@/components/forms/ProdutoForm";
@@ -582,46 +583,44 @@ const Estoque = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-4 mb-6">
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">
-              Filtros:
-            </Badge>
-            <Select value={filters.quantity} onValueChange={setQuantityFilter}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Filtrar por quantidade" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos os produtos</SelectItem>
-                <SelectItem value="sem-estoque">Sem estoque (0)</SelectItem>
-                <SelectItem value="estoque-baixo">Estoque baixo (&lt;10)</SelectItem>
-                <SelectItem value="em-estoque">Em estoque (≥10)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <Badge variant="outline" className="flex-shrink-0">
+            Filtros:
+          </Badge>
 
-          <Select value={filters.category} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Categoria" />
+          {/* Filtro de Quantidade (mantém select único pois são estados, não valores) */}
+          <Select value={filters.quantity} onValueChange={setQuantityFilter}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filtrar por quantidade" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todas">Todas categorias</SelectItem>
-              {categorias.map(categoria => (
-                <SelectItem key={categoria} value={categoria}>{categoria}</SelectItem>
-              ))}
+              <SelectItem value="todos">Todos os produtos</SelectItem>
+              <SelectItem value="sem-estoque">Sem estoque (0)</SelectItem>
+              <SelectItem value="estoque-baixo">Estoque baixo (&lt;10)</SelectItem>
+              <SelectItem value="em-estoque">Em estoque (≥10)</SelectItem>
             </SelectContent>
           </Select>
 
-          <Select value={filters.type} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Tipo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos os tipos</SelectItem>
-              {tipos.map(tipo => (
-                <SelectItem key={tipo} value={tipo}>{tipo}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Filtro múltiplo de Categorias */}
+          <MultiSelectFilter
+            label="Categoria"
+            icon={Tag}
+            options={categorias}
+            selectedValues={filters.category === 'todas' ? [] : filters.category.split(',').filter(Boolean)}
+            onChange={(values) => setCategoryFilter(values.length === 0 ? 'todas' : values.join(','))}
+            placeholder="Categorias"
+            className="w-[200px]"
+          />
+
+          {/* Filtro múltiplo de Tipos */}
+          <MultiSelectFilter
+            label="Tipo"
+            icon={Package}
+            options={tipos}
+            selectedValues={filters.type === 'todos' ? [] : filters.type.split(',').filter(Boolean)}
+            onChange={(values) => setTypeFilter(values.length === 0 ? 'todos' : values.join(','))}
+            placeholder="Tipos"
+            className="w-[200px]"
+          />
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">

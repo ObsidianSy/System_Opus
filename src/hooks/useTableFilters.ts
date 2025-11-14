@@ -34,16 +34,22 @@ export const useTableFilters = <T,>(
         if (!matchesQuantity) return false;
       }
 
-      // Category filter
+      // Category filter (suporta múltipla seleção separada por vírgula)
       if (config.categoryField && categoryFilter !== "todas") {
         const categoria = getValue(item, config.categoryField);
-        if (categoria !== categoryFilter) return false;
+        const selectedCategories = categoryFilter.split(',').filter(Boolean);
+        if (selectedCategories.length > 0 && !selectedCategories.includes(categoria)) {
+          return false;
+        }
       }
 
-      // Type filter
+      // Type filter (suporta múltipla seleção separada por vírgula)
       if (config.typeField && typeFilter !== "todos") {
         const tipo = getValue(item, config.typeField);
-        if (tipo !== typeFilter) return false;
+        const selectedTypes = typeFilter.split(',').filter(Boolean);
+        if (selectedTypes.length > 0 && !selectedTypes.includes(tipo)) {
+          return false;
+        }
       }
 
       // Search filter

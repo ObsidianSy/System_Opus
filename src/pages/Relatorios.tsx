@@ -7,8 +7,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Download, FileText, Package, ShoppingCart, Users, TrendingUp, TrendingDown, DollarSign, Calendar, Filter, BarChart3, PieChart, Activity } from "lucide-react";
+import { Download, FileText, Package, ShoppingCart, Users, TrendingUp, TrendingDown, DollarSign, Calendar, Filter, BarChart3, PieChart, Activity, Tag, Store } from "lucide-react";
 import { formatCurrencyAbbreviated, formatAbbreviated, toNumber } from "@/utils/formatters";
+import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import Layout from "@/components/Layout";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -23,9 +24,9 @@ import { useDateFilter } from "@/contexts/DateFilterContext";
 const Relatorios = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [quantityFilter, setQuantityFilter] = useState<string>("todos");
-  const [categoryFilter, setCategoryFilter] = useState<string>("todas");
-  const [clienteFilter, setClienteFilter] = useState<string>("todos");
-  const [tipoFilter, setTipoFilter] = useState<string>("todos");
+  const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
+  const [clienteFilter, setClienteFilter] = useState<string[]>([]);
+  const [tipoFilter, setTipoFilter] = useState<string[]>([]);
   const [periodoGrafico, setPeriodoGrafico] = useState<'mensal' | 'diario'>('mensal');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
@@ -46,25 +47,28 @@ const Relatorios = () => {
           quantityFilter === "estoque-baixo" ? quantidade > 0 && quantidade < 10 :
             quantityFilter === "em-estoque" ? quantidade >= 10 : true;
 
-      const matchesCategory = categoryFilter === "todas" ? true : categoria === categoryFilter;
-      const matchesTipo = tipoFilter === "todos" ? true : tipoProduto === tipoFilter;
+      const matchesCategory = categoryFilter.length === 0 || categoryFilter.includes(categoria);
+      const matchesTipo = tipoFilter.length === 0 || tipoFilter.includes(tipoProduto);
 
       return matchesQuantity && matchesCategory && matchesTipo;
     });
 
-    // Filtrar vendas por cliente e tipo de produto
+    // Filtrar vendas por cliente, tipo de produto e categoria
     const vendasFiltradas = (vendas.data || []).filter(venda => {
       const cliente = venda["Nome Cliente"];
       const sku = venda["SKU Produto"];
 
-      const matchesCliente = clienteFilter === "todos" ? true : cliente === clienteFilter;
+      const matchesCliente = clienteFilter.length === 0 || clienteFilter.includes(cliente);
 
-      // Buscar o tipo do produto para filtrar vendas
+      // Buscar o produto para obter tipo e categoria
       const produto = (produtos.data || []).find(p => p["SKU"] === sku);
       const tipoProduto = (produto as any)?.["Tipo Produto"] || (produto as any)?.tipo_produto;
-      const matchesTipo = tipoFilter === "todos" ? true : tipoProduto === tipoFilter;
+      const categoriaProduto = produto?.["Categoria"];
+      
+      const matchesTipo = tipoFilter.length === 0 || tipoFilter.includes(tipoProduto);
+      const matchesCategory = categoryFilter.length === 0 || categoryFilter.includes(categoriaProduto);
 
-      return matchesCliente && matchesTipo;
+      return matchesCliente && matchesTipo && matchesCategory;
     });
 
     return { produtosFiltrados, vendasFiltradas };
@@ -722,56 +726,47 @@ const Relatorios = () => {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">Cliente</label>
-                    <Select value={clienteFilter} onValueChange={setClienteFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Todos os clientes" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="todos">Todos os clientes</SelectItem>
-                        {clientesUnicos.map(cliente => (
-                          <SelectItem key={cliente} value={cliente}>{cliente}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <MultiSelectFilter
+                      label="Cliente"
+                      icon={Users}
+                      options={clientesUnicos}
+                      selectedValues={clienteFilter}
+                      onChange={setClienteFilter}
+                      placeholder="Todos os clientes"
+                    />
                   </div>
 
                   <div>
                     <label className="text-sm font-medium mb-2 block">Tipo de Produto</label>
-                    <Select value={tipoFilter} onValueChange={setTipoFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Todos os tipos" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="todos">Todos os tipos</SelectItem>
-                        {tiposProduto.map(tipo => (
-                          <SelectItem key={tipo} value={tipo}>{tipo}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <MultiSelectFilter
+                      label="Tipo"
+                      icon={Package}
+                      options={tiposProduto}
+                      selectedValues={tipoFilter}
+                      onChange={setTipoFilter}
+                      placeholder="Todos os tipos"
+                    />
                   </div>
 
                   <div>
                     <label className="text-sm font-medium mb-2 block">Categoria</label>
-                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Todas categorias" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="todas">Todas categorias</SelectItem>
-                        {categorias.map(categoria => (
-                          <SelectItem key={categoria} value={categoria}>{categoria}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <MultiSelectFilter
+                      label="Categoria"
+                      icon={Tag}
+                      options={categorias}
+                      selectedValues={categoryFilter}
+                      onChange={setCategoryFilter}
+                      placeholder="Todas categorias"
+                    />
                   </div>
 
                   <div className="flex items-end">
                     <Button
                       variant="outline"
                       onClick={() => {
-                        setClienteFilter("todos");
-                        setCategoryFilter("todas");
-                        setTipoFilter("todos");
+                        setClienteFilter([]);
+                        setCategoryFilter([]);
+                        setTipoFilter([]);
                       }}
                       className="w-full"
                     >
@@ -1017,32 +1012,26 @@ const Relatorios = () => {
 
                   <div>
                     <label className="text-sm font-medium mb-2 block">Tipo de Produto</label>
-                    <Select value={tipoFilter} onValueChange={setTipoFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Todos os tipos" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="todos">Todos os tipos</SelectItem>
-                        {tiposProduto.map(tipo => (
-                          <SelectItem key={tipo} value={tipo}>{tipo}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <MultiSelectFilter
+                      label="Tipo"
+                      icon={Package}
+                      options={tiposProduto}
+                      selectedValues={tipoFilter}
+                      onChange={setTipoFilter}
+                      placeholder="Todos os tipos"
+                    />
                   </div>
 
                   <div>
                     <label className="text-sm font-medium mb-2 block">Categoria</label>
-                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Todas categorias" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="todas">Todas categorias</SelectItem>
-                        {categorias.map(categoria => (
-                          <SelectItem key={categoria} value={categoria}>{categoria}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <MultiSelectFilter
+                      label="Categoria"
+                      icon={Tag}
+                      options={categorias}
+                      selectedValues={categoryFilter}
+                      onChange={setCategoryFilter}
+                      placeholder="Todas categorias"
+                    />
                   </div>
 
                   <div className="flex items-end gap-2">

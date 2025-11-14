@@ -4,10 +4,15 @@ import { useDateFilter } from '@/contexts/DateFilterContext';
 
 export interface FilterState {
   searchTerm: string;
-  selectedClient: string;
-  selectedSKU: string;
-  selectedStatus: string;
-  selectedCanal: string;
+  selectedClients: string[]; // Mudado para array
+  selectedSKUs: string[]; // Mudado para array
+  selectedStatuses: string[]; // Mudado para array
+  selectedCanais: string[]; // Mudado para array
+  // Manter retrocompatibilidade (deprecated)
+  selectedClient?: string;
+  selectedSKU?: string;
+  selectedStatus?: string;
+  selectedCanal?: string;
   [key: string]: any;
 }
 
@@ -28,6 +33,11 @@ export const useQuickFilters = <T = any>(
   // Estado dos filtros
   const [filters, setFilters] = useState<FilterState>({
     searchTerm: '',
+    selectedClients: [],
+    selectedSKUs: [],
+    selectedStatuses: [],
+    selectedCanais: [],
+    // Retrocompatibilidade
     selectedClient: '',
     selectedSKU: '',
     selectedStatus: '',
@@ -81,6 +91,10 @@ export const useQuickFilters = <T = any>(
   const clearFilters = useCallback(() => {
     const clearedFilters = {
       searchTerm: '',
+      selectedClients: [],
+      selectedSKUs: [],
+      selectedStatuses: [],
+      selectedCanais: [],
       selectedClient: '',
       selectedSKU: '',
       selectedStatus: '',

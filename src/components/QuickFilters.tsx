@@ -2,17 +2,11 @@ import React, { useEffect } from 'react';
 import { Search, X, Filter, User, Package, Tag, Store, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { FilterState } from '@/hooks/useQuickFilters';
 import { useDateFilter } from '@/contexts/DateFilterContext';
+import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 
 interface QuickFiltersProps {
   filters: FilterState;
@@ -64,11 +58,11 @@ export const QuickFilters: React.FC<QuickFiltersProps> = ({
   }, []);
 
   const filterChips = [
-    { key: 'selectedClient', label: 'Cliente', value: filters.selectedClient, icon: User },
-    { key: 'selectedSKU', label: 'SKU', value: filters.selectedSKU, icon: Package },
-    { key: 'selectedStatus', label: 'Status', value: filters.selectedStatus, icon: Tag },
-    { key: 'selectedCanal', label: 'Canal', value: filters.selectedCanal, icon: Store },
-  ].filter(chip => chip.value);
+    { key: 'selectedClients', label: 'Clientes', values: filters.selectedClients || [], icon: User },
+    { key: 'selectedSKUs', label: 'SKUs', values: filters.selectedSKUs || [], icon: Package },
+    { key: 'selectedStatuses', label: 'Status', values: filters.selectedStatuses || [], icon: Tag },
+    { key: 'selectedCanais', label: 'Canais', values: filters.selectedCanais || [], icon: Store },
+  ].filter(chip => chip.values.length > 0);
 
   return (
     <div className={cn("space-y-4", className)}>
@@ -88,86 +82,54 @@ export const QuickFilters: React.FC<QuickFiltersProps> = ({
 
         {/* Filtro por Cliente */}
         {clients.length > 0 && (
-          <Select
-            value={filters.selectedClient}
-            onValueChange={(value) => updateFilter('selectedClient', value === 'all' ? '' : value)}
-          >
-            <SelectTrigger className="w-[180px] glass-card border-primary/20">
-              <User className="w-4 h-4 mr-2" />
-              <SelectValue placeholder="Cliente" />
-            </SelectTrigger>
-            <SelectContent className="glass-card">
-              <SelectItem value="all">Todos os clientes</SelectItem>
-              {clients.map((client) => (
-                <SelectItem key={client} value={client}>
-                  {client}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <MultiSelectFilter
+            label="Cliente"
+            icon={User}
+            options={clients}
+            selectedValues={filters.selectedClients || []}
+            onChange={(values) => updateFilter('selectedClients', values)}
+            placeholder="Clientes"
+            className="w-[200px]"
+          />
         )}
 
         {/* Filtro por SKU */}
         {skus.length > 0 && (
-          <Select
-            value={filters.selectedSKU}
-            onValueChange={(value) => updateFilter('selectedSKU', value === 'all' ? '' : value)}
-          >
-            <SelectTrigger className="w-[150px] glass-card border-primary/20">
-              <Package className="w-4 h-4 mr-2" />
-              <SelectValue placeholder="SKU" />
-            </SelectTrigger>
-            <SelectContent className="glass-card max-h-[200px]">
-              <SelectItem value="all">Todos os SKUs</SelectItem>
-              {skus.map((sku) => (
-                <SelectItem key={sku} value={sku}>
-                  {sku}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <MultiSelectFilter
+            label="SKU"
+            icon={Package}
+            options={skus}
+            selectedValues={filters.selectedSKUs || []}
+            onChange={(values) => updateFilter('selectedSKUs', values)}
+            placeholder="SKUs"
+            className="w-[180px]"
+          />
         )}
 
         {/* Filtro por Canal */}
         {canais.length > 0 && (
-          <Select
-            value={filters.selectedCanal}
-            onValueChange={(value) => updateFilter('selectedCanal', value === 'all' ? '' : value)}
-          >
-            <SelectTrigger className="w-[200px] glass-card border-primary/20">
-              <Store className="w-4 h-4 mr-2" />
-              <SelectValue placeholder="Canal/Loja" />
-            </SelectTrigger>
-            <SelectContent className="glass-card max-h-[300px]">
-              <SelectItem value="all">Todos os canais</SelectItem>
-              {canais.map((canal) => (
-                <SelectItem key={canal} value={canal}>
-                  {canal}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <MultiSelectFilter
+            label="Canal/Loja"
+            icon={Store}
+            options={canais}
+            selectedValues={filters.selectedCanais || []}
+            onChange={(values) => updateFilter('selectedCanais', values)}
+            placeholder="Canais"
+            className="w-[200px]"
+          />
         )}
 
         {/* Filtro por Status */}
         {statuses.length > 0 && (
-          <Select
-            value={filters.selectedStatus}
-            onValueChange={(value) => updateFilter('selectedStatus', value === 'all' ? '' : value)}
-          >
-            <SelectTrigger className="w-[150px] glass-card border-primary/20">
-              <Tag className="w-4 h-4 mr-2" />
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent className="glass-card">
-              <SelectItem value="all">Todos os status</SelectItem>
-              {statuses.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <MultiSelectFilter
+            label="Status"
+            icon={Tag}
+            options={statuses}
+            selectedValues={filters.selectedStatuses || []}
+            onChange={(values) => updateFilter('selectedStatuses', values)}
+            placeholder="Status"
+            className="w-[180px]"
+          />
         )}
 
         {/* Filtros customizados */}
@@ -206,17 +168,24 @@ export const QuickFilters: React.FC<QuickFiltersProps> = ({
             </Badge>
           )}
 
-          {filterChips.map(({ key, label, value, icon: Icon }) => (
-            <Badge
-              key={key}
-              variant="secondary"
-              className="glass-card border-primary/20 text-primary hover:bg-primary/10 cursor-pointer transition-colors"
-              onClick={() => updateFilter(key, '')}
-            >
-              <Icon className="w-3 h-3 mr-1" />
-              {label}: {value}
-              <X className="w-3 h-3 ml-1" />
-            </Badge>
+          {filterChips.map(({ key, label, values, icon: Icon }) => (
+            <React.Fragment key={key}>
+              {values.map((value) => (
+                <Badge
+                  key={`${key}-${value}`}
+                  variant="secondary"
+                  className="glass-card border-primary/20 text-primary hover:bg-primary/10 cursor-pointer transition-colors"
+                  onClick={() => {
+                    const newValues = values.filter(v => v !== value);
+                    updateFilter(key, newValues);
+                  }}
+                >
+                  <Icon className="w-3 h-3 mr-1" />
+                  {label}: {value}
+                  <X className="w-3 h-3 ml-1" />
+                </Badge>
+              ))}
+            </React.Fragment>
           ))}
         </div>
       )}

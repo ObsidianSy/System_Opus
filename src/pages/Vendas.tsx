@@ -93,20 +93,23 @@ const Vendas = () => {
         sku.includes(searchTerm) ||
         pedidoUid.includes(searchTerm);
 
-      const matchesClient = !filters.selectedClient ||
-        venda['Nome Cliente'] === filters.selectedClient;
+      // Múltipla seleção de clientes
+      const matchesClients = !filters.selectedClients || filters.selectedClients.length === 0 ||
+        filters.selectedClients.includes(venda['Nome Cliente']);
 
-      const matchesSKU = !filters.selectedSKU ||
-        venda['SKU Produto'] === filters.selectedSKU;
+      // Múltipla seleção de SKUs
+      const matchesSKUs = !filters.selectedSKUs || filters.selectedSKUs.length === 0 ||
+        filters.selectedSKUs.includes(venda['SKU Produto']);
 
-      const matchesCanal = !filters.selectedCanal ||
-        venda['Canal'] === filters.selectedCanal;
+      // Múltipla seleção de canais
+      const matchesCanais = !filters.selectedCanais || filters.selectedCanais.length === 0 ||
+        filters.selectedCanais.includes(venda['Canal']);
 
-      return matchesSearch && matchesClient && matchesSKU && matchesCanal;
+      return matchesSearch && matchesClients && matchesSKUs && matchesCanais;
     },
     {
       persistKey: 'vendas',
-      defaultFilters: { selectedStatus: '' }
+      defaultFilters: { selectedStatuses: [] }
     }
   );
 
