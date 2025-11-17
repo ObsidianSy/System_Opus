@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, X, Filter, User, Package, Tag, Store, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +36,13 @@ export const QuickFilters: React.FC<QuickFiltersProps> = ({
 }) => {
   const { clients = [], skus = [], statuses = [], canais = [] } = availableOptions;
   const { formatDisplayRange } = useDateFilter();
+  // Estado local para o campo de busca — permite digitação instantânea
+  const [localSearch, setLocalSearch] = useState<string>(filters.searchTerm || '');
+
+  // Sincroniza o input local quando filtros externos mudam (ex.: limpar filtros)
+  useEffect(() => {
+    setLocalSearch(filters.searchTerm || '');
+  }, [filters.searchTerm]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -74,8 +81,13 @@ export const QuickFilters: React.FC<QuickFiltersProps> = ({
           <Input
             data-search-input
             placeholder="Buscar por cliente, SKU ou pedido... (Ctrl+F)"
-            value={filters.searchTerm}
-            onChange={(e) => updateFilter('searchTerm', e.target.value)}
+            value={localSearch}
+            onChange={(e) => {
+              const v = e.target.value;
+              setLocalSearch(v);
+              // updateFilter aplica debounce internamente em useQuickFilters
+              updateFilter('searchTerm', v);
+            }}
             className="pl-10 glass-card border-primary/20 focus:border-primary/40"
           />
         </div>
