@@ -14,6 +14,7 @@ import VendaForm from "@/components/forms/VendaForm";
 import { formatCurrency, formatQuantity, formatNumber, toNumber } from "@/utils/formatters";
 import { API_BASE_URL } from "@/config/api";
 import { excluirVenda } from "@/services/n8nIntegration";
+import { ErrorMessages } from "@/utils/errorMessages";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -183,14 +184,14 @@ const Vendas = () => {
       if (success) {
         notificationManager.show(
           `delete-${vendaToDelete['ID Venda']}`,
-          `Venda ${vendaToDelete['ID Venda']} foi excluída com sucesso`,
+          ErrorMessages.vendas.deleteSuccess(vendaToDelete['ID Venda']),
           'success'
         );
         refresh();
       } else {
         notificationManager.show(
           `delete-error-${vendaToDelete['ID Venda']}`,
-          'Não foi possível excluir a venda. Tente novamente.',
+          ErrorMessages.vendas.deleteFailed(),
           'error'
         );
       }
@@ -198,7 +199,7 @@ const Vendas = () => {
       console.error('Erro ao excluir venda:', error);
       notificationManager.show(
         `delete-exception-${Date.now()}`,
-        'Ocorreu um erro ao tentar excluir a venda',
+        ErrorMessages.vendas.deleteError,
         'error'
       );
     } finally {

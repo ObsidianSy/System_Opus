@@ -13,6 +13,7 @@ import { formatCurrencyAbbreviated, toNumber } from "@/utils/formatters";
 import { formatarDocumento, formatarTelefone } from "@/utils/validators";
 import { Edit, Plus, Search, Trash, Users, AlertCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { ErrorMessages } from "@/utils/errorMessages";
 import { consultarClientes } from "@/services/n8nIntegration";
 import ClienteForm from "@/components/forms/ClienteForm";
 import { EmptyState } from "@/components/ui/empty-state";

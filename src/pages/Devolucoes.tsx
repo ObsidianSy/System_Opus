@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import Layout from "@/components/Layout";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { notificationManager } from "@/components/NotificationManager";
+import { ErrorMessages } from "@/utils/errorMessages";
 import DashboardCard from "@/components/DashboardCard";
 import { PackageX, CheckCircle, XCircle, Clock, ChevronDown, ChevronUp, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -100,7 +101,7 @@ const Devolucoes = () => {
             setDevolucoesAgrupadas(agrupadas);
         } catch (error) {
             console.error('Erro ao carregar devoluções:', error);
-            notificationManager.show('erro-devol', 'Erro ao carregar devoluções pendentes', 'error');
+            notificationManager.show('erro-devol', ErrorMessages.devolucoes.loadFailed, 'error');
         } finally {
             setIsLoading(false);
         }
@@ -121,7 +122,7 @@ const Devolucoes = () => {
             setProdutos(data || []);
         } catch (error) {
             console.error('Erro ao carregar produtos:', error);
-            notificationManager.show('erro-produtos', 'Erro ao carregar lista de produtos', 'error');
+            notificationManager.show('erro-produtos', ErrorMessages.produtos.loadFailed, 'error');
         } finally {
             setIsLoadingProdutos(false);
         }
@@ -147,13 +148,13 @@ const Devolucoes = () => {
         if (!selectedVenda) return;
 
         if (form.quantidade_recebida < 0 || form.quantidade_recebida > selectedVenda.quantidade_vendida) {
-            notificationManager.show('qtd-invalida', 'Quantidade recebida inválida', 'error');
+            notificationManager.show('qtd-invalida', ErrorMessages.devolucoes.invalidQuantity, 'error');
             return;
         }
 
         // Validar se produto errado precisa informar qual veio
         if (form.tipo_problema === 'errado_bom' && !form.produto_real_recebido) {
-            notificationManager.show('sku-obrigatorio', 'Informe qual produto foi recebido', 'error');
+            notificationManager.show('sku-obrigatorio', ErrorMessages.devolucoes.missingProduct, 'error');
             return;
         }
 
@@ -205,7 +206,7 @@ const Devolucoes = () => {
             carregarDevolucoes();
         } catch (error: any) {
             console.error('Erro ao conferir devolução:', error);
-            notificationManager.show('erro-conf', error.message || 'Erro ao conferir devolução', 'error');
+            notificationManager.show('erro-conf', ErrorMessages.devolucoes.conferFailed, 'error');
         } finally {
             setIsSubmitting(false);
         }

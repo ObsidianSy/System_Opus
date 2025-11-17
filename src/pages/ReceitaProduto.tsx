@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Edit, Trash2, Package } from "lucide-react";
 import { toast } from "sonner";
+import { ErrorMessages } from "@/utils/errorMessages";
 import { consultarDados, salvarReceitaProduto, gerarIdReceita, type ReceitaProdutoData } from "@/services/n8nIntegration";
 
 interface Produto {
@@ -94,7 +95,7 @@ const ReceitaProduto = () => {
       setReceitas(Array.isArray(dadosReceitas) ? dadosReceitas : []);
     } catch (error) {
       console.error("Erro ao carregar dados:", error);
-      toast.error("Erro ao carregar dados. Tente novamente.");
+      toast.error(ErrorMessages.receitas.loadFailed);
       // Inicializar com arrays vazios em caso de erro
       setProdutos([]);
       setMateriasPrimas([]);
@@ -147,7 +148,7 @@ const ReceitaProduto = () => {
       };
 
       await salvarReceitaProduto(receitaData);
-      toast.success("Receita cadastrada com sucesso!");
+      toast.success(ErrorMessages.receitas.saveSuccess(false));
       setShowAddDialog(false);
       setFormData({
         skuProduto: "",
@@ -156,14 +157,14 @@ const ReceitaProduto = () => {
       carregarDados();
     } catch (error) {
       console.error("Erro ao salvar receita:", error);
-      toast.error("Erro ao salvar receita");
+      toast.error(ErrorMessages.receitas.saveFailed((error as any)?.message));
     }
   };
 
   const handleOpenEdit = (skuProduto: string) => {
     const receitasDoProduto = getReceitasPorProduto(skuProduto);
     if (!receitasDoProduto || receitasDoProduto.length === 0) {
-      toast.error("Nenhuma receita encontrada para este produto");
+      toast.error(ErrorMessages.receitas.notFound);
       return;
     }
     setEditFormData({
@@ -220,12 +221,12 @@ const ReceitaProduto = () => {
       };
 
       await salvarReceitaProduto(receitaData);
-      toast.success("Receita atualizada com sucesso!");
+      toast.success(ErrorMessages.receitas.saveSuccess(true));
       setShowEditDialog(false);
       carregarDados();
     } catch (error) {
       console.error("Erro ao atualizar receita:", error);
-      toast.error("Erro ao atualizar receita");
+      toast.error(ErrorMessages.receitas.saveFailed((error as any)?.message));
     }
   };
 

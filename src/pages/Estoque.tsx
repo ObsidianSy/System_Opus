@@ -11,6 +11,7 @@ import { RawMaterialsDataTable } from "@/components/tables/RawMaterialsDataTable
 import { Plus, Package, RefreshCw, Settings, ArrowUp, MoreHorizontal, TrendingUp, TrendingDown, AlertTriangle, Download, Upload, Camera, Tag } from "lucide-react";
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { toast } from "sonner";
+import { ErrorMessages } from "@/utils/errorMessages";
 import { consultarDados } from "@/services/n8nIntegration";
 import ProdutoForm from "@/components/forms/ProdutoForm";
 import * as XLSX from 'xlsx';
@@ -111,7 +112,9 @@ const Estoque = () => {
       }
     } catch (error) {
       console.error('Erro ao carregar matéria-prima:', error);
-      toast.error("Erro ao carregar matéria-prima");
+      toast.error(ErrorMessages.materiaPrima.loadFailed, {
+        description: "Tente novamente em alguns instantes"
+      });
     }
   }, []);
 
@@ -186,7 +189,9 @@ const Estoque = () => {
       });
     } catch (error) {
       console.error('Erro ao exportar:', error);
-      toast.error("Erro ao exportar planilha");
+      toast.error("Não foi possível exportar a planilha", {
+        description: "Verifique se há dados para exportar e tente novamente"
+      });
     }
   }, [activeTab, filteredProdutosAcabados, filteredMateriasPrimas]);
 

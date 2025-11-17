@@ -39,6 +39,7 @@ import { Card } from "@/components/ui/card";
 import { Edit, Trash2, MoreHorizontal, Package, Search } from "lucide-react";
 import { excluirMateriaPrima } from "@/services/n8nIntegration";
 import { toast } from "sonner";
+import { ErrorMessages } from "@/utils/errorMessages";
 import { sortBySKU } from "@/utils/sortUtils";
 
 interface MateriaPrima {
@@ -109,14 +110,18 @@ const RawMaterialsDataTableComponent = ({
       const success = await excluirMateriaPrima(sku);
       
       if (success) {
-        toast.success("Matéria-prima excluída com sucesso!");
+        toast.success(ErrorMessages.materiaPrima.deleteSuccess);
         onRefresh();
       } else {
-        toast.error("Erro ao excluir matéria-prima");
+        toast.error(ErrorMessages.materiaPrima.deleteFailed((error as any)?.message), {
+          description: "Verifique se não está sendo usada em receitas"
+        });
       }
     } catch (error) {
       console.error("Erro ao excluir matéria-prima:", error);
-      toast.error("Erro inesperado ao excluir matéria-prima");
+      toast.error(ErrorMessages.materiaPrima.deleteFailed(), {
+        description: "Entre em contato com o suporte se o problema persistir"
+      });
     } finally {
       setIsDeleting(false);
       setDeleteItem(null);

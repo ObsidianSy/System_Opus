@@ -40,6 +40,7 @@ import { Card } from "@/components/ui/card";
 import { Edit, Trash2, MoreHorizontal, Package, Search } from "lucide-react";
 import { excluirProduto } from "@/services/n8nIntegration";
 import { toast } from "sonner";
+import { ErrorMessages } from "@/utils/errorMessages";
 import { formatCurrencyAbbreviated, formatQuantity } from "@/utils/formatters";
 import { sortBySKU } from "@/utils/sortUtils";
 
@@ -117,7 +118,10 @@ const ProductsDataTableComponent = ({
         toast.success("Produto excluído com sucesso!");
         onRefresh();
       } else {
-        toast.error("Erro ao excluir produto");
+        const errorMsg = error.message || '';
+        toast.error(ErrorMessages.produtos.deleteFailed(errorMsg), {
+          description: "Verifique se o produto não está sendo usado em vendas ou receitas"
+        });
       }
     } catch (error) {
       console.error("Erro ao excluir produto:", error);

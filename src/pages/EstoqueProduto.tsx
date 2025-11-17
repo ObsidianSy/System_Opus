@@ -61,8 +61,8 @@ const EstoqueProduto = () => {
     e.preventDefault();
     
     if (!formData.nomeProduto || !formData.categoria || !formData.tipoProduto || formData.precoUnitario <= 0) {
-      toast.error("Erro", {
-        description: "Preencha todos os campos obrigatórios"
+      toast.error("Dados incompletos", {
+        description: "Preencha todos os campos obrigatórios (nome, categoria, tipo e preço)"
       });
       return;
     }
@@ -83,19 +83,22 @@ const EstoqueProduto = () => {
       const sucesso = await salvarProduto(produtoData);
 
       if (sucesso) {
-        toast.success(isEditing ? "Produto atualizado" : "Produto cadastrado", {
+        toast.success(isEditing ? "Produto atualizado com sucesso" : "Produto cadastrado com sucesso", {
           description: `${formData.nomeProduto} foi ${isEditing ? "atualizado" : "adicionado"} ao estoque`
         });
         navigate("/estoque");
       } else {
-        toast.error("Erro", {
-          description: "Não foi possível salvar o produto. Tente novamente."
+        toast.error(ErrorMessages.produtos.saveFailed(isEditing), {
+          description: "Verifique os dados e tente novamente."
         });
       }
     } catch (error) {
       console.error("Erro ao salvar produto:", error);
-      toast.error("Erro", {
-        description: "Erro inesperado ao salvar produto"
+      const errorMsg = (error as any)?.message || '';
+      const isDuplicate = errorMsg.toLowerCase().includes('duplicate') || errorMsg.toLowerCase().includes('já existe');
+      
+      toast.error(isDuplicate ? ErrorMessages.produtos.duplicateSku : ErrorMessages.produtos.saveFailed(isEditing), {
+        description: isDuplicate ? "Use um código SKU único" : "Verifique os dados e tente novamente"
       });
     } finally {
       setIsLoading(false);

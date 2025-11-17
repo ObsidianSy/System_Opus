@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { CreditCard } from "lucide-react";
 import { toast } from "sonner";
+import { ErrorMessages } from "@/utils/errorMessages";
 import { criarPagamento, gerarIdPagamento } from "@/services/n8nIntegration";
 import { toNumber } from "@/utils/formatters";
 import { z } from "zod";
@@ -92,7 +93,7 @@ export function PagamentoQuickDialog({
       });
 
       if (sucesso) {
-        toast.success("Pagamento registrado com sucesso!");
+        toast.success(ErrorMessages.pagamentos.createSuccess);
         setOpen(false);
         // Limpar formulário
         setValor("");
@@ -107,7 +108,7 @@ export function PagamentoQuickDialog({
     } catch (error) {
       if (error instanceof z.ZodError) {
         const firstError = error.issues[0];
-        toast.error(firstError.message);
+        toast.error(firstError.message || ErrorMessages.pagamentos.createFailed());
       } else {
         console.error("Erro ao registrar pagamento:", error);
         toast.error("Erro ao registrar pagamento");

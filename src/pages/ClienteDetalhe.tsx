@@ -10,6 +10,7 @@ import LoadingSpinner from "@/components/LoadingSpinner";
 import { ProductList } from "@/components/ProductList";
 import { ArrowLeft, User, CreditCard, ShoppingCart, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
+import { ErrorMessages } from "@/utils/errorMessages";
 import { consultarClientes } from "@/services/n8nIntegration";
 import { useApiDataWithFilters } from "@/hooks/useApiDataWithFilters";
 import DashboardCard from "@/components/DashboardCard";
@@ -97,13 +98,13 @@ const ClienteDetalhe = () => {
           
           setCliente(clienteFormatado);
         } else {
-          toast.error("Cliente não encontrado");
+          toast.error(ErrorMessages.clientes.notFound);
           navigate('/clientes');
         }
       }
     } catch (error) {
       console.error('Erro ao carregar cliente:', error);
-      toast.error("Erro ao carregar dados do cliente");
+      toast.error(ErrorMessages.clientes.loadFailed);
     } finally {
       setIsLoading(false);
     }
