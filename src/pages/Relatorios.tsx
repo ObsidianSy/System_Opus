@@ -31,6 +31,8 @@ const Relatorios = () => {
   const [periodoGrafico, setPeriodoGrafico] = useState<'mensal' | 'diario'>('mensal');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
+  const [sortBy, setSortBy] = useState<string>('valorTotal');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const navigate = useNavigate();
   const { vendas, produtos, clientes, pagamentos } = useAppDataWithFilters();
   const { dateRange } = useDateFilter();
@@ -218,6 +220,41 @@ const Relatorios = () => {
       acc + toNumber(venda["Valor Total"]), 0
     );
   }, [dadosFiltrados.vendasFiltradas]);
+
+  // Ordenação da tabela Vendas por SKU
+  const sortedVendasPorSKU = useMemo(() => {
+    const data = Array.isArray(vendasPorSKU) ? [...vendasPorSKU] : [];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const key = sortBy;
+
+    data.sort((a: any, b: any) => {
+      if (key === 'percent') {
+        const aVal = faturamentoFiltrado > 0 ? (a.valorTotal / faturamentoFiltrado) : 0;
+        const bVal = faturamentoFiltrado > 0 ? (b.valorTotal / faturamentoFiltrado) : 0;
+        return (aVal - bVal) * dir;
+      }
+
+      const aVal = (a as any)[key];
+      const bVal = (b as any)[key];
+
+      if (typeof aVal === 'string' || typeof bVal === 'string') {
+        return String(aVal || '').localeCompare(String(bVal || '')) * dir;
+      }
+
+      return (Number(aVal || 0) - Number(bVal || 0)) * dir;
+    });
+
+    return data;
+  }, [vendasPorSKU, sortBy, sortDir, faturamentoFiltrado]);
+
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortDir('desc');
+    }
+  };
 
   // Processar dados auxiliares para gráficos com dados filtrados
   const dadosGraficos = useMemo(() => {
@@ -1054,16 +1091,28 @@ const Relatorios = () => {
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/50">
-                          <TableHead className="font-semibold">SKU</TableHead>
-                          <TableHead className="font-semibold">Nome Produto</TableHead>
-                          <TableHead className="text-right font-semibold">Qtd Vendida</TableHead>
-                          <TableHead className="text-right font-semibold">Preço Unit.</TableHead>
-                          <TableHead className="text-right font-semibold">Valor Total</TableHead>
-                          <TableHead className="text-center font-semibold">% Total</TableHead>
+                          <TableHead className="font-semibold cursor-pointer" onClick={() => handleSort('sku')}>
+                            SKU <span className="ml-2 text-muted-foreground">{sortBy === 'sku' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+                          </TableHead>
+                          <TableHead className="font-semibold cursor-pointer" onClick={() => handleSort('nome')}>
+                            Nome Produto <span className="ml-2 text-muted-foreground">{sortBy === 'nome' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+                          </TableHead>
+                          <TableHead className="text-right font-semibold cursor-pointer" onClick={() => handleSort('quantidade')}>
+                            Qtd Vendida <span className="ml-2 text-muted-foreground">{sortBy === 'quantidade' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+                          </TableHead>
+                          <TableHead className="text-right font-semibold cursor-pointer" onClick={() => handleSort('precoUnitario')}>
+                            Preço Unit. <span className="ml-2 text-muted-foreground">{sortBy === 'precoUnitario' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+                          </TableHead>
+                          <TableHead className="text-right font-semibold cursor-pointer" onClick={() => handleSort('valorTotal')}>
+                            Valor Total <span className="ml-2 text-muted-foreground">{sortBy === 'valorTotal' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+                          </TableHead>
+                          <TableHead className="text-center font-semibold cursor-pointer" onClick={() => handleSort('percent')}>
+                            % Total <span className="ml-2 text-muted-foreground">{sortBy === 'percent' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {vendasPorSKU
+                        {sortedVendasPorSKU
                           .slice((currentPage - 1) * pageSize, currentPage * pageSize)
                           .map((item, index) => {
                             // Usar faturamentoFiltrado ao invés de estatisticas.faturamentoTotal
