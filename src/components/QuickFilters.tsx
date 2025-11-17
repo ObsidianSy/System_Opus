@@ -45,6 +45,14 @@ export const QuickFilters: React.FC<QuickFiltersProps> = ({
   }, [filters.searchTerm]);
 
   // Keyboard shortcuts
+  // Debounce local para evitar chamadas custosas ao updateFilter em cada tecla
+  const debouncedUpdate = useMemo(() => debounce((v: string) => {
+    try {
+      updateFilter('searchTerm', v);
+    } catch (e) {
+      // Silenciar erros aqui — updateFilter pode mudar entre renders
+    }
+  }, 300), [updateFilter]);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'f') {
