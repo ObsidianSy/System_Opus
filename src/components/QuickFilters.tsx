@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Search, X, Filter, User, Package, Tag, Store, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { FilterState } from '@/hooks/useQuickFilters';
 import { useDateFilter } from '@/contexts/DateFilterContext';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
+import { debounce } from '@/utils/performance';
 
 interface QuickFiltersProps {
   filters: FilterState;
