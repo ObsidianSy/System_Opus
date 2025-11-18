@@ -9,11 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -27,12 +23,19 @@ import { format } from 'date-fns';
 
 export const DateFilterSelector: React.FC = () => {
   const { preset, dateRange, setPreset, setDateRange, formatDisplayRange } = useDateFilter();
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [tempRange, setTempRange] = useState<{ from?: Date; to?: Date }>({});
   const [calendarMonth, setCalendarMonth] = useState<Date>(dateRange?.startDate || new Date());
 
   const handlePresetSelect = (newPreset: string) => {
     setPreset(newPreset);
+    setIsDropdownOpen(false);
+  };
+
+  const handleOpenCalendar = () => {
+    setIsDropdownOpen(false);
+    setTimeout(() => setIsDialogOpen(true), 50);
   };
 
   const handleCustomDateSelect = (range: { from?: Date; to?: Date } | undefined) => {
@@ -45,7 +48,6 @@ export const DateFilterSelector: React.FC = () => {
         startDate: range.from,
         endDate: range.to
       });
-      setIsCalendarOpen(false);
       setTempRange({});
     }
   };
@@ -90,7 +92,7 @@ export const DateFilterSelector: React.FC = () => {
 
   return (
     <div className="flex items-center gap-2">
-      <DropdownMenu>
+      <DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
@@ -106,19 +108,6 @@ export const DateFilterSelector: React.FC = () => {
         <DropdownMenuContent 
           align="start" 
           className="glass-card"
-          onCloseAutoFocus={(e) => e.preventDefault()}
-          onInteractOutside={(e) => {
-            const target = e.target as HTMLElement;
-            if (target.closest('[data-calendar-portal="true"]')) {
-              e.preventDefault();
-            }
-          }}
-          onPointerDownOutside={(e) => {
-            const target = e.target as HTMLElement;
-            if (target.closest('[data-calendar-portal="true"]')) {
-              e.preventDefault();
-            }
-          }}
         >
           {Object.entries(DATE_PRESETS).map(([key, label]) => (
             <DropdownMenuItem
@@ -133,94 +122,86 @@ export const DateFilterSelector: React.FC = () => {
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
-          <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen} modal={false}>
-            <PopoverTrigger asChild>
-              <DropdownMenuItem 
-                onSelect={(e) => e.preventDefault()}
-                className="cursor-pointer"
-              >
-                <CalendarIcon className="h-4 w-4 mr-2" />
-                Selecionar período customizado
-              </DropdownMenuItem>
-            </PopoverTrigger>
-            <PopoverContent 
-              data-calendar-portal="true"
-              className="w-auto p-0 glass-card z-[60]" 
-              align="start"
-              onOpenAutoFocus={(e) => e.preventDefault()}
-              onCloseAutoFocus={(e) => e.preventDefault()}
-            >
-              {/* Seletores de Mês e Ano */}
-              <div className="flex items-center justify-between gap-2 p-3 border-b">
-                <Select
-                  value={calendarMonth.getMonth().toString()}
-                  onValueChange={handleMonthSelect}
-                >
-                  <SelectTrigger className="w-[130px] h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {months.map((month) => (
-                      <SelectItem key={month.value} value={month.value}>
-                        {month.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={calendarMonth.getFullYear().toString()}
-                  onValueChange={handleYearChange}
-                >
-                  <SelectTrigger className="w-[100px] h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {years.map((year) => (
-                      <SelectItem key={year} value={year.toString()}>
-                        {year}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <div className="flex gap-1">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => handleMonthChange(-1)}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => handleMonthChange(1)}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-
-              <Calendar
-                initialFocus
-                mode="range"
-                month={calendarMonth}
-                onMonthChange={setCalendarMonth}
-                selected={{
-                  from: tempRange.from || dateRange?.startDate,
-                  to: tempRange.to || dateRange?.endDate
-                }}
-                onSelect={handleCustomDateSelect}
-                numberOfMonths={2}
-                className="pointer-events-auto"
-              />
-            </PopoverContent>
-          </Popover>
+          <DropdownMenuItem 
+            onClick={handleOpenCalendar}
+            className="cursor-pointer"
+          >
+            <CalendarIcon className="h-4 w-4 mr-2" />
+            Selecionar período customizado
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="p-0 glass-card max-w-fit" onOpenAutoFocus={(e) => e.preventDefault()}>
+          <div className="flex items-center justify-between gap-2 p-3 border-b">
+            <Select
+              value={calendarMonth.getMonth().toString()}
+              onValueChange={handleMonthSelect}
+            >
+              <SelectTrigger className="w-[130px] h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" className="z-[9999]">
+                {months.map((month) => (
+                  <SelectItem key={month.value} value={month.value}>
+                    {month.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={calendarMonth.getFullYear().toString()}
+              onValueChange={handleYearChange}
+            >
+              <SelectTrigger className="w-[100px] h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" className="z-[9999]">
+                {years.map((year) => (
+                  <SelectItem key={year} value={year.toString()}>
+                    {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex gap-1">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => handleMonthChange(-1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => handleMonthChange(1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          <Calendar
+            initialFocus
+            mode="range"
+            month={calendarMonth}
+            onMonthChange={setCalendarMonth}
+            selected={{
+              from: tempRange.from || dateRange?.startDate,
+              to: tempRange.to || dateRange?.endDate
+            }}
+            onSelect={handleCustomDateSelect}
+            numberOfMonths={2}
+            className="pointer-events-auto"
+          />
+        </DialogContent>
+      </Dialog>
       
       <div className="text-sm text-muted-foreground font-medium">
         {formatDisplayRange()}
