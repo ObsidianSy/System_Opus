@@ -129,13 +129,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <SidebarMenuButton>
                   <div className="flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden bg-white">
-                    {/* Logo estática: tenta /logo-opus.png; se não existir, fallback para /logo.png */}
-                    <img
-                      src="/logo-opus.png"
-                      alt="Opus One"
-                      className="h-full w-full object-contain"
-                      onError={(e) => { (e.target as HTMLImageElement).src = '/logo.png' }}
-                    />
+                    {/* Logo estática: usa /logo.png por padrão; se não existir, fallback para /logo-opus.png */}
+                      <img
+                        src="/logo.png"
+                        alt="Opus One"
+                        className="h-full w-full object-contain"
+                        onError={(e) => { (e.target as HTMLImageElement).src = '/logo-opus.png' }}
+                      />
                   </div>
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-semibold">Opus_One</span>
