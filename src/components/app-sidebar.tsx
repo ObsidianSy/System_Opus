@@ -126,17 +126,23 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg">
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 text-white">
-                <Database className="size-4" />
-              </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">Opus_One</span>
-                <span className="truncate text-xs">Sistema de Gestão</span>
-              </div>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton>
+                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden bg-white">
+                    {/* Logo estática: tenta /logo-opus.png; se não existir, fallback para /logo.png */}
+                    <img
+                      src="/logo-opus.png"
+                      alt="Opus One"
+                      className="h-full w-full object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).src = '/logo.png' }}
+                    />
+                  </div>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-semibold">Opus_One</span>
+                    <span className="truncate text-xs">Sistema de Gestão</span>
+                  </div>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
 

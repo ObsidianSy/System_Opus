@@ -978,13 +978,48 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
             const valuesToInsert: any[][] = [];
             const skippedRows: number[] = [];
 
+            // 🔥 FUNÇÃO: Normalizar pedidos com múltiplos números (ex: "2000010058319625 2000138627127236" → "2000010058319625")
+            const normalizePedidoId = (pedidoRaw: string): string => {
+                if (!pedidoRaw) return '';
+                const pedidoStr = String(pedidoRaw).trim();
+                
+                // Remover quebras de linha (\n, \r) e espaços extras
+                const semQuebras = pedidoStr.replace(/[\r\n]+/g, ' ').trim();
+                
+                // Se tem espaço, pega só o primeiro número
+                const firstNumber = semQuebras.split(/\s+/)[0];
+                return firstNumber;
+            };
+
+            // 🔥 CONTROLE DE DUPLICATAS: Rastrear pedidos já processados nesta importação
+            const pedidosProcessados = new Set<string>();
+            let duplicatasIgnoradas = 0;
+
             for (let i = 0; i < jsonData.length; i++) {
                 const row = jsonData[i];
 
                 try {
                     // Extrair campos principais do Excel UpSeller
-                    const orderIdPlatform = row['Nº de Pedido da Plataforma'] || '';
-                    const orderIdInternal = row['Nº de Pedido'] || '';
+                    const orderIdPlatformRaw = row['Nº de Pedido da Plataforma'] || '';
+                    const orderIdInternalRaw = row['Nº de Pedido'] || '';
+                    
+                    // ✅ NORMALIZAR: Se o pedido tem múltiplos números, pega só o primeiro
+                    const orderIdPlatform = normalizePedidoId(orderIdPlatformRaw);
+                    const orderIdInternal = normalizePedidoId(orderIdInternalRaw);
+                    const finalOrderId = orderIdPlatform || orderIdInternal;
+
+                    // ✅ VERIFICAR DUPLICATA: Se o pedido normalizado já foi processado, IGNORAR
+                    const pedidoKey = `${clientIdNum}_${finalOrderId}`;
+                    if (pedidosProcessados.has(pedidoKey)) {
+                        console.log(`⏭️  DUPLICATA IGNORADA: Linha ${i + 1} - Pedido ${orderIdPlatformRaw} → normalizado para ${finalOrderId} (já processado)`);
+                        duplicatasIgnoradas++;
+                        skippedRows.push(i + 1);
+                        continue;
+                    }
+                    
+                    // Marcar pedido como processado
+                    pedidosProcessados.add(pedidoKey);
+
                     const orderDateRaw = row['Hora do Pedido'] || row['Hora do Pagamento'] || null;
                     const orderDate = parseExcelDate(orderDateRaw);
                     const sku = row['SKU'] || '';
@@ -1507,7 +1542,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 stage: 'completed',
                 current: 100,
                 total: 100,
-                message: `✅ Concluído! ${insertedRows} linhas | ${autoMatched} relacionados | ${remainingPending} pendentes`
+                message: `✅ Concluído! ${insertedRows} linhas | ${duplicatasIgnoradas} duplicatas ignoradas | ${autoMatched} relacionados | ${remainingPending} pendentes`
             });
 
             // Registrar log de atividade
@@ -1522,6 +1557,7 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                         filename,
                         total_rows: jsonData.length,
                         inserted_rows: insertedRows,
+                        duplicatas_ignoradas: duplicatasIgnoradas,
                         client_id: clientIdNum,
                         envio_num: envio_num || batchId
                     },
@@ -1540,10 +1576,13 @@ enviosRouter.post('/', upload.single('file'), async (req: MulterRequest, res: Re
                 linhas: jsonData.length,
                 linhas_inseridas: insertedRows,
                 linhas_ignoradas: jsonData.length - insertedRows,
+                duplicatas_ignoradas: duplicatasIgnoradas,
                 auto_relacionadas: autoMatched,
                 pendentes: remainingPending,
                 errors: errors.length > 0 ? errors : undefined,
-                message: remainingPending === 0
+                message: duplicatasIgnoradas > 0
+                    ? `✅ ${insertedRows} linhas importadas (${duplicatasIgnoradas} duplicatas ignoradas). ${autoMatched} itens relacionados, ${remainingPending} aguardam relacionamento manual.`
+                    : remainingPending === 0
                     ? '✅ Todos os itens foram relacionados automaticamente!'
                     : `✅ ${insertedRows} linhas importadas. ${autoMatched} itens relacionados, ${remainingPending} aguardam relacionamento manual.`
             });

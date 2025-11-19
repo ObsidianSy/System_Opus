@@ -68,7 +68,7 @@ export default function Login() {
                             <Lock className="h-6 w-6 text-primary-foreground" />
                         </div>
                     </div>
-                    <CardTitle className="text-2xl text-center">Opus_One ERP</CardTitle>
+                    <CardTitle className="text-2xl text-center">Gestao de Ecom ERP</CardTitle>
                     <CardDescription className="text-center">
                         Entre com suas credenciais para acessar o sistema
                     </CardDescription>

@@ -4,11 +4,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Opus_One - Sistema de Gestão ERP</title>
-  <meta name="description" content="Sistema ERP Opus_One - Gestão integrada de vendas, estoque e logística" />
-  <meta name="author" content="Opus_One" />
+  <title>Gestao de Ecom - Sistema de Gestão ERP</title>
+  <meta name="description" content="Sistema ERP Gestao de Ecom - Gestão integrada de vendas, estoque e logística" />
+  <meta name="author" content="Gestao de Ecom" />
 
-  <meta property="og:title" content="Opus_One ERP" />
+  <meta property="og:title" content="Gestao de Ecom ERP" />
   <meta property="og:description" content="Sistema de Gestão Empresarial Integrado" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
@@ -16,6 +16,17 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@lovable_dev" />
   <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+  <script>
+    // Define o tema inicial o mais cedo possível para evitar flash de tema
+    (function(){
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'dark') document.documentElement.classList.add('dark');
+        else if (t === 'light') document.documentElement.classList.remove('dark');
+        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark');
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
 </head>
 
 <body>

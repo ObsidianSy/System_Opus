@@ -1,4 +1,4 @@
-# Opus_One - Sistema de Gestão ERP
+# Gestao de Ecom - Sistema de Gestão ERP
 
 Sistema completo de gestão empresarial com controle de estoque, vendas, clientes, pagamentos, produção e integração logística (Mercado Livre Full).
 
